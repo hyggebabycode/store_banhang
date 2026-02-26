@@ -5,6 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "backend": "tsx server-backend.ts",
+    "mock": "tsx server-mock.ts",
+    "frontend": "vite",
+    "dev:full": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "dev:mock": "concurrently \"npm run mock\" \"npm run frontend\"",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
@@ -16,6 +21,8 @@
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "better-sqlite3": "^12.4.1",
+    "concurrently": "^9.2.1",
+    "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
@@ -26,6 +33,7 @@
     "vite": "^6.2.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
