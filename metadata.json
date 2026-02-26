@@ -1,0 +1,7 @@
+{
+  "name": "OmniShop Pro - E-commerce with Integrated Debugging",
+  "description": "A comprehensive e-commerce platform featuring real-time debug logging across Frontend, Backend, and Database for seamless troubleshooting.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
