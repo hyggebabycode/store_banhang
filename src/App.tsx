@@ -780,7 +780,7 @@ export default function App() {
       document.removeEventListener("keydown", keyHandler);
       canvas.removeEventListener("click", flap);
     };
-  }, [flappyOpen]);
+  }, [flappyOpen, flappyStarted]);
 
   const saveProfile = () => {
     if (!currentUser) return;
@@ -5396,7 +5396,10 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 bg-black/85 backdrop-blur-md z-[200]"
-              onClick={() => { setFlappyOpen(false); setFlappyStarted(false); }}
+              onClick={() => {
+                setFlappyOpen(false);
+                setFlappyStarted(false);
+              }}
             />
             <div className="fixed inset-0 z-[201] flex items-center justify-center p-4 pointer-events-none">
               <motion.div
@@ -5430,7 +5433,10 @@ export default function App() {
                     </span>
                   </div>
                   <button
-                    onClick={() => { setFlappyOpen(false); setFlappyStarted(false); }}
+                    onClick={() => {
+                      setFlappyOpen(false);
+                      setFlappyStarted(false);
+                    }}
                     className="text-zinc-400 hover:text-white transition-colors ml-4"
                   >
                     <X className="w-5 h-5" />
