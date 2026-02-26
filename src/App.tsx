@@ -41,6 +41,9 @@ import {
   Tag,
   ChevronDown,
   Sparkles,
+  Zap,
+  Award,
+  Palette,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -275,12 +278,33 @@ export default function App() {
   // Feature: Search suggestions
   const [showSuggestions, setShowSuggestions] = useState(false);
 
+  // Color preview (A)
+  const [previewFilter, setPreviewFilter] = useState("");
+
   // Wow effects
   const [heroMouse, setHeroMouse] = useState({ x: 0.5, y: 0.5 });
   const [flyParticles, setFlyParticles] = useState<
     { id: number; x: number; y: number }[]
   >([]);
   const [cartBounce, setCartBounce] = useState(false);
+  const [lastEarnedPoints, setLastEarnedPoints] = useState(0);
+  // R: Crying cart
+  const [cartCrying, setCartCrying] = useState(false);
+  const cartPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // VV: Weather banner
+  const [weatherMsg, setWeatherMsg] = useState<{
+    icon: string;
+    text: string;
+  } | null>(null);
+  // Y: Budget combo
+  const [budgetInput, setBudgetInput] = useState("");
+  const [budgetCombos, setBudgetCombos] = useState<Product[]>([]);
+  // AAA: Flappy cart
+  const [flappyOpen, setFlappyOpen] = useState(false);
+  const [flappyOverlay, setFlappyOverlay] = useState<"none" | "over" | "won">(
+    "none",
+  );
+  const flappyCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Product editing (admin)
   const [isEditProductOpen, setIsEditProductOpen] = useState(false);
@@ -308,6 +332,17 @@ export default function App() {
     role: "customer" as "customer" | "partner",
     storeName: "",
   });
+
+  // Profile editing
+  const [profileTab, setProfileTab] = useState<"overview" | "edit">("overview");
+  const [profileForm, setProfileForm] = useState({
+    name: "",
+    phone: "",
+    address: "",
+    bio: "",
+    avatarColor: "#6abf69",
+  });
+  const [profileSaved, setProfileSaved] = useState(false);
   const [registerError, setRegisterError] = useState("");
   const [registerSuccess, setRegisterSuccess] = useState("");
 
@@ -458,6 +493,232 @@ export default function App() {
     return () => clearInterval(timer);
   }, [products]);
 
+  // Load profile customizations from localStorage when user changes
+  useEffect(() => {
+    if (!currentUser) return;
+    const saved = localStorage.getItem(`profile_${currentUser.email}`);
+    if (saved) {
+      try {
+        const data = JSON.parse(saved);
+        setProfileForm({
+          name: data.name || currentUser.name,
+          phone: data.phone || "",
+          address: data.address || "",
+          bio: data.bio || "",
+          avatarColor: data.avatarColor || "#6abf69",
+        });
+        if (data.name && data.name !== currentUser.name) {
+          setCurrentUser((u) => (u ? { ...u, name: data.name } : u));
+        }
+      } catch {
+        /* ignore */
+      }
+    } else {
+      setProfileForm((f) => ({ ...f, name: currentUser.name }));
+    }
+  }, [currentUser?.email]);
+
+  // R: Crying cart when user leaves with items
+  useEffect(() => {
+    const handler = () => {
+      if (document.hidden && cart.length > 0) {
+        setCartCrying(true);
+        setTimeout(() => setCartCrying(false), 3500);
+      }
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [cart.length]);
+
+  // VV: Weather banner via Open-Meteo (no API key)
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      try {
+        const { latitude: lat, longitude: lon } = pos.coords;
+        const res = await fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`,
+        );
+        const data = await res.json();
+        const code: number = data?.current_weather?.weathercode ?? -1;
+        if (code >= 51 && code <= 67)
+          setWeatherMsg({
+            icon: "🌧",
+            text: "Mưa rồi, ở nhà order đi! Giao hàng miễn phí hôm nay 🚚",
+          });
+        else if (code >= 80 && code <= 82)
+          setWeatherMsg({
+            icon: "🌦",
+            text: "Mưa rào bất chợt! Ở nhà mà mua sắm thôi 🛍",
+          });
+        else if (code >= 95 && code <= 99)
+          setWeatherMsg({
+            icon: "⛈",
+            text: "Bão to đừng ra đường! Mình ship đến tận cửa nhà bạn 🏃",
+          });
+        else if (code >= 71 && code <= 77)
+          setWeatherMsg({
+            icon: "❄️",
+            text: "Trời lạnh thế này, ở nhà ôm chăn order thôi 🧣",
+          });
+        else if (code >= 1 && code <= 3)
+          setWeatherMsg({
+            icon: "☁️",
+            text: "Trời âm u hơi buồn... mua đồ cho vui không? 😊",
+          });
+      } catch {
+        /* ignore */
+      }
+    });
+  }, []);
+
+  // AAA: Flappy Cart game loop
+  useEffect(() => {
+    if (!flappyOpen) return;
+    const canvas = flappyCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const W = canvas.width,
+      H = canvas.height;
+    const GRAV = 0.38,
+      FLAP_VEL = -7.5,
+      PIPE_W = 52,
+      GAP = 135,
+      SPEED = 2.8;
+    const BIRDX = 70,
+      BIRD_W = 30,
+      BIRD_H = 28;
+    let birdY = H / 2,
+      birdVel = 0;
+    let pipes: { x: number; topH: number; scored?: boolean }[] = [];
+    let score = 0,
+      frame = 0;
+    let phase: "running" | "over" | "won" = "running";
+    let rafId = 0;
+    setFlappyOverlay("none");
+    const flap = () => {
+      if (phase === "running") {
+        birdVel = FLAP_VEL;
+      } else {
+        birdY = H / 2;
+        birdVel = 0;
+        pipes = [];
+        score = 0;
+        frame = 0;
+        phase = "running";
+        setFlappyOverlay("none");
+        cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(loop);
+      }
+    };
+    const loop = () => {
+      frame++;
+      if (frame % 88 === 0)
+        pipes.push({ x: W, topH: 50 + Math.random() * (H - GAP - 100) });
+      birdVel += GRAV;
+      birdY += birdVel;
+      pipes.forEach((p) => (p.x -= SPEED));
+      pipes = pipes.filter((p) => p.x > -PIPE_W);
+      pipes.forEach((p) => {
+        if (!p.scored && p.x + PIPE_W < BIRDX) {
+          p.scored = true;
+          score++;
+        }
+      });
+      if (phase === "running") {
+        for (const p of pipes) {
+          if (BIRDX + BIRD_W > p.x && BIRDX < p.x + PIPE_W) {
+            if (birdY < p.topH || birdY + BIRD_H > p.topH + GAP) {
+              phase = "over";
+              setFlappyOverlay("over");
+              break;
+            }
+          }
+        }
+        if (birdY < 0 || birdY + BIRD_H > H) {
+          phase = "over";
+          setFlappyOverlay("over");
+        }
+        if (score >= 5) {
+          phase = "won";
+          setFlappyOverlay("won");
+        }
+      }
+      // Background
+      ctx.fillStyle = "#0a2a1a";
+      ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = "rgba(106,191,105,0.07)";
+      ctx.lineWidth = 1;
+      for (let x = 0; x < W; x += 40) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, H);
+        ctx.stroke();
+      }
+      for (let y = 0; y < H; y += 40) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+        ctx.stroke();
+      }
+      // Pipes
+      pipes.forEach((p) => {
+        ctx.fillStyle = "#4a9e49";
+        ctx.fillRect(p.x, 0, PIPE_W, p.topH - 18);
+        ctx.fillStyle = "#e8a838";
+        ctx.fillRect(p.x - 5, p.topH - 20, PIPE_W + 10, 22);
+        ctx.fillStyle = "#4a9e49";
+        ctx.fillRect(p.x, p.topH + GAP + 20, PIPE_W, H);
+        ctx.fillStyle = "#e8a838";
+        ctx.fillRect(p.x - 5, p.topH + GAP, PIPE_W + 10, 22);
+      });
+      // Bird
+      ctx.save();
+      ctx.translate(BIRDX + BIRD_W / 2, birdY + BIRD_H / 2);
+      ctx.rotate(Math.max(-0.4, Math.min(0.5, birdVel * 0.06)));
+      ctx.font = "26px serif";
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "center";
+      ctx.fillText("🛒", 0, 0);
+      ctx.restore();
+      // Score HUD
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(W / 2 - 46, 10, 92, 34);
+      ctx.fillStyle = "white";
+      ctx.font = "bold 18px monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`${score} / 5 🛒`, W / 2, 27);
+      if (phase === "running") rafId = requestAnimationFrame(loop);
+    };
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        e.preventDefault();
+        flap();
+      }
+    };
+    document.addEventListener("keydown", keyHandler);
+    canvas.addEventListener("click", flap);
+    rafId = requestAnimationFrame(loop);
+    return () => {
+      cancelAnimationFrame(rafId);
+      document.removeEventListener("keydown", keyHandler);
+      canvas.removeEventListener("click", flap);
+    };
+  }, [flappyOpen]);
+
+  const saveProfile = () => {
+    if (!currentUser) return;
+    localStorage.setItem(
+      `profile_${currentUser.email}`,
+      JSON.stringify(profileForm),
+    );
+    setCurrentUser((u) => (u ? { ...u, name: profileForm.name || u.name } : u));
+    setProfileSaved(true);
+    setTimeout(() => setProfileSaved(false), 2500);
+  };
+
   const seedData = async () => {
     try {
       const res = await fetch("/api/seed", { method: "POST" });
@@ -493,6 +754,43 @@ export default function App() {
     logger.log("INFO", `Added to cart: ${product.name}`);
   };
 
+  // Loyalty points helpers (F)
+  const getLoyaltyPoints = (email: string): number => {
+    try {
+      return parseInt(localStorage.getItem(`pts_${email}`) || "0");
+    } catch {
+      return 0;
+    }
+  };
+  const addLoyaltyPoints = (email: string, orderTotal: number) => {
+    const earned = Math.floor(orderTotal / 1000);
+    const current = getLoyaltyPoints(email);
+    localStorage.setItem(`pts_${email}`, String(current + earned));
+    return earned;
+  };
+  const getLoyaltyBadge = (pts: number) => {
+    if (pts >= 5000) return { icon: "🌳", label: "VIP", color: "#e8a838" };
+    if (pts >= 1000) return { icon: "🌿", label: "Regular", color: "#6abf69" };
+    if (pts >= 200) return { icon: "🌱", label: "Member", color: "#60a5fa" };
+    return { icon: "🪴", label: "Newbie", color: "#a1a1aa" };
+  };
+
+  const suggestBudgetCombo = () => {
+    const budget = parseInt(budgetInput.replace(/\D/g, ""), 10);
+    if (!budget || budget < 1000) return;
+    const shuffled = [...products].sort(() => Math.random() - 0.5);
+    const combo: Product[] = [];
+    let total = 0;
+    for (const p of shuffled) {
+      if (p.stock > 0 && total + p.price <= budget) {
+        combo.push(p);
+        total += p.price;
+      }
+      if (combo.length >= 4) break;
+    }
+    setBudgetCombos(combo);
+  };
+
   const handleCheckout = async () => {
     try {
       const res = await fetch("/api/orders", {
@@ -506,6 +804,14 @@ export default function App() {
         }),
       });
       if (res.ok) {
+        // Award loyalty points
+        if (currentUser) {
+          const earned = addLoyaltyPoints(
+            currentUser.email,
+            cart.reduce((s, i) => s + i.price, 0),
+          );
+          setLastEarnedPoints(earned);
+        }
         setCheckoutStep(3);
         setCart([]);
         fetchData();
@@ -843,11 +1149,49 @@ export default function App() {
           </button>
           <motion.button
             onClick={() => setIsCartOpen(true)}
-            animate={cartBounce ? { scale: [1, 1.35, 0.9, 1.1, 1] } : {}}
+            onMouseDown={() => {
+              cartPressRef.current = setTimeout(
+                () => setFlappyOpen(true),
+                1500,
+              );
+            }}
+            onMouseUp={() => {
+              if (cartPressRef.current) clearTimeout(cartPressRef.current);
+            }}
+            onMouseLeave={() => {
+              if (cartPressRef.current) clearTimeout(cartPressRef.current);
+            }}
+            onTouchStart={() => {
+              cartPressRef.current = setTimeout(
+                () => setFlappyOpen(true),
+                1500,
+              );
+            }}
+            onTouchEnd={() => {
+              if (cartPressRef.current) clearTimeout(cartPressRef.current);
+            }}
+            animate={
+              cartCrying
+                ? { x: [-5, 5, -4, 4, -2, 2, 0] }
+                : cartBounce
+                  ? { scale: [1, 1.35, 0.9, 1.1, 1] }
+                  : {}
+            }
             transition={{ duration: 0.4 }}
+            title="Giữ 1.5s để chơi Flappy Cart 🎮"
             className={`relative p-2.5 ${darkMode ? "bg-white/5 hover:bg-white/10 border-white/10" : "bg-zinc-100 hover:bg-zinc-200 border-zinc-300"} border rounded-xl transition-all`}
           >
             <ShoppingCart className="w-5 h-5" />
+            {cartCrying && (
+              <motion.span
+                initial={{ opacity: 0, y: 0 }}
+                animate={{ opacity: [0, 1, 0], y: 16 }}
+                transition={{ duration: 1, repeat: 2 }}
+                className="absolute top-3 left-1/2 -translate-x-1/2 pointer-events-none text-xs"
+              >
+                😢
+              </motion.span>
+            )}
             {cart.length > 0 && (
               <span
                 className="absolute -top-1 -right-1 bg-[#6abf69] text-black text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center"
@@ -919,6 +1263,38 @@ export default function App() {
             {/* ════ SHOP ════ */}
             {view === "shop" && (
               <div className="space-y-16">
+                {/* VV: Weather banner */}
+                <AnimatePresence>
+                  {weatherMsg && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -16 }}
+                      className="flex items-center justify-between gap-4 px-6 py-4 rounded-[20px]"
+                      style={{
+                        background:
+                          "linear-gradient(135deg, rgba(106,191,105,0.15), rgba(232,168,56,0.1))",
+                        border: "1px solid rgba(106,191,105,0.3)",
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-3xl">{weatherMsg.icon}</span>
+                        <p
+                          className="font-bold text-sm"
+                          style={{ color: "#6abf69" }}
+                        >
+                          {weatherMsg.text}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setWeatherMsg(null)}
+                        className="text-zinc-500 hover:text-white transition-colors flex-shrink-0"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
                 <section
                   className="relative h-[580px] rounded-[40px] overflow-hidden flex items-center px-16"
                   style={{
@@ -1163,6 +1539,128 @@ export default function App() {
                     </div>
                   </div>
                 </section>
+
+                {/* Y: Budget Combo Suggester */}
+                <div
+                  className="rounded-[32px] p-8"
+                  style={{
+                    background: darkMode
+                      ? "linear-gradient(135deg, #18181b, #1c1c22)"
+                      : "white",
+                    border: "1px solid rgba(106,191,105,0.2)",
+                    boxShadow: "0 4px 24px rgba(106,191,105,0.06)",
+                  }}
+                >
+                  <div className="flex items-center gap-3 mb-5">
+                    <Zap className="w-6 h-6" style={{ color: "#e8a838" }} />
+                    <h3 className="text-2xl font-black">
+                      Gợi ý combo hợp túi tiền
+                    </h3>
+                    <span
+                      className="text-xs font-bold px-2 py-0.5 rounded-full ml-auto hidden sm:inline"
+                      style={{
+                        background: "rgba(106,191,105,0.15)",
+                        color: "#6abf69",
+                      }}
+                    >
+                      AI Combo ✨
+                    </span>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-3 mb-6">
+                    <input
+                      type="text"
+                      value={budgetInput}
+                      onChange={(e) => setBudgetInput(e.target.value)}
+                      onKeyDown={(e) =>
+                        e.key === "Enter" && suggestBudgetCombo()
+                      }
+                      placeholder="Nhập ngân sách (VD: 500000)"
+                      className="flex-1 px-5 py-3 rounded-2xl font-bold outline-none border"
+                      style={{
+                        background: darkMode
+                          ? "rgba(255,255,255,0.05)"
+                          : "#f4f4f5",
+                        borderColor: "rgba(106,191,105,0.3)",
+                        color: darkMode ? "white" : "#18181b",
+                      }}
+                    />
+                    <button
+                      onClick={suggestBudgetCombo}
+                      className="px-8 py-3 rounded-2xl font-black text-black transition-all hover:scale-105 active:scale-95"
+                      style={{
+                        background: "linear-gradient(135deg, #6abf69, #e8a838)",
+                      }}
+                    >
+                      Tìm combo
+                    </button>
+                  </div>
+                  {budgetCombos.length > 0 ? (
+                    <div>
+                      <p className="text-sm text-zinc-500 font-bold mb-4">
+                        Combo gợi ý · Tổng:{" "}
+                        <span style={{ color: "#6abf69" }}>
+                          {fmtVND(
+                            budgetCombos.reduce((s, p) => s + p.price, 0),
+                          )}
+                        </span>
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                        {budgetCombos.map((p) => (
+                          <motion.div
+                            key={p.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            whileHover={{ scale: 1.04 }}
+                            onClick={() => setSelectedProduct(p)}
+                            className="cursor-pointer rounded-2xl overflow-hidden"
+                            style={{
+                              border: "1px solid rgba(106,191,105,0.25)",
+                              background: darkMode
+                                ? "rgba(255,255,255,0.03)"
+                                : "#fafafa",
+                            }}
+                          >
+                            <img
+                              src={getProductImage(p)}
+                              alt={p.name}
+                              className="w-full h-28 object-cover"
+                            />
+                            <div className="p-3">
+                              <p className="font-bold text-xs truncate">
+                                {p.name}
+                              </p>
+                              <p
+                                className="font-black text-sm mt-1"
+                                style={{ color: "#6abf69" }}
+                              >
+                                {fmtVND(p.price)}
+                              </p>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => {
+                          budgetCombos.forEach((p) => addToCart(p));
+                          setBudgetCombos([]);
+                          setBudgetInput("");
+                        }}
+                        className="mt-5 w-full py-3 rounded-2xl font-black text-black transition-all hover:scale-[1.02]"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, #6abf69, #e8a838)",
+                        }}
+                      >
+                        Thêm tất cả vào giỏ 🛒
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-zinc-500 text-sm">
+                      Nhập ngân sách → mình tự tìm combo sản phẩm phù hợp nhất
+                      cho bạn ✨
+                    </p>
+                  )}
+                </div>
 
                 <section>
                   <div
@@ -2248,12 +2746,13 @@ export default function App() {
 
             {/* ════ PROFILE (customer) ════ */}
             {view === "profile" && currentUser && (
-              <div className="space-y-10">
+              <div className="space-y-8">
+                {/* Banner */}
                 <div
                   className="rounded-[40px] p-10 flex items-center gap-8 relative overflow-hidden"
                   style={{
                     background:
-                      "linear-gradient(135deg, rgba(139,92,246,0.15), rgba(106,191,105,0.1))",
+                      "linear-gradient(135deg, rgba(106,191,105,0.12), rgba(232,168,56,0.08))",
                     border: "1px solid rgba(255,255,255,0.08)",
                   }}
                 >
@@ -2261,215 +2760,590 @@ export default function App() {
                     className="absolute inset-0"
                     style={{
                       backgroundImage:
-                        "linear-gradient(rgba(139,92,246,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(139,92,246,0.05) 1px, transparent 1px)",
+                        "linear-gradient(rgba(106,191,105,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(106,191,105,0.05) 1px, transparent 1px)",
                       backgroundSize: "40px 40px",
                     }}
                   />
-                  <div
-                    className="relative w-20 h-20 rounded-full flex items-center justify-center text-4xl font-black"
+                  <motion.div
+                    whileHover={{ scale: 1.08, rotate: 3 }}
+                    className="relative w-24 h-24 rounded-full flex items-center justify-center text-5xl font-black flex-shrink-0 cursor-pointer"
                     style={{
-                      background: "linear-gradient(135deg, #6abf69, #e8a838)",
-                      boxShadow: "0 0 30px rgba(139,92,246,0.4)",
+                      background: `linear-gradient(135deg, ${profileForm.avatarColor}, #e8a838)`,
+                      boxShadow: `0 0 30px ${profileForm.avatarColor}66`,
                     }}
+                    onClick={() => setProfileTab("edit")}
+                    title="Chỉnh sửa hồ sơ"
                   >
-                    {currentUser.name.charAt(0)}
-                  </div>
-                  <div className="relative">
+                    {currentUser.name.charAt(0).toUpperCase()}
+                    <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-zinc-800 border-2 border-zinc-700 flex items-center justify-center">
+                      <Pencil className="w-3 h-3 text-zinc-300" />
+                    </div>
+                  </motion.div>
+                  <div className="relative flex-1">
                     <p className="text-zinc-400 text-sm font-bold uppercase tracking-widest mb-1">
                       {t("profile.welcome")}
                     </p>
                     <h2 className="text-4xl font-black text-white">
                       {currentUser.name}
                     </h2>
-                    <p className="text-zinc-400 mt-1">
-                      {currentUser.email} ·{" "}
+                    {profileForm.bio && (
+                      <p className="text-zinc-400 text-sm italic mt-1">
+                        "{profileForm.bio}"
+                      </p>
+                    )}
+                    <div className="flex items-center flex-wrap gap-3 mt-2">
+                      <p className="text-zinc-400 text-sm">
+                        {currentUser.email}
+                      </p>
+                      {profileForm.phone && (
+                        <span className="text-zinc-400 text-sm">
+                          · 📞 {profileForm.phone}
+                        </span>
+                      )}
+                      {profileForm.address && (
+                        <span className="text-zinc-400 text-sm">
+                          · 📍 {profileForm.address}
+                        </span>
+                      )}
                       <span
-                        className="font-bold uppercase"
-                        style={{ color: "#6abf69" }}
+                        className="px-3 py-0.5 rounded-full text-xs font-black uppercase"
+                        style={{
+                          background: `${profileForm.avatarColor}22`,
+                          color: profileForm.avatarColor,
+                          border: `1px solid ${profileForm.avatarColor}44`,
+                        }}
                       >
                         {currentUser.role}
                       </span>
-                    </p>
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <h3 className="text-2xl font-black mb-6 flex items-center gap-3">
-                    <History className="w-6 h-6" style={{ color: "#6abf69" }} />
-                    <span
+
+                {/* Loyalty Points Card (Feature F) */}
+                {(() => {
+                  const pts = getLoyaltyPoints(currentUser.email);
+                  const badge = getLoyaltyBadge(pts);
+                  const nextTier =
+                    pts < 200
+                      ? 200
+                      : pts < 1000
+                        ? 1000
+                        : pts < 5000
+                          ? 5000
+                          : null;
+                  const progress = nextTier
+                    ? Math.min((pts / nextTier) * 100, 100)
+                    : 100;
+                  return (
+                    <motion.div
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="rounded-[28px] p-6 flex flex-col sm:flex-row items-start sm:items-center gap-5"
                       style={{
-                        backgroundImage:
-                          "linear-gradient(135deg, #6abf69, #e8a838)",
-                        WebkitBackgroundClip: "text",
-                        WebkitTextFillColor: "transparent",
+                        background: darkMode
+                          ? "linear-gradient(135deg, #18181b, #1c1c22)"
+                          : "white",
+                        border: "1px solid rgba(106,191,105,0.25)",
+                        boxShadow: "0 4px 24px rgba(106,191,105,0.08)",
                       }}
                     >
-                      {t("profile.orderHistory")}
-                    </span>
-                  </h3>
-                  {userOrders.length === 0 ? (
-                    <div
-                      className="rounded-3xl p-16 text-center"
-                      style={{
-                        background: "rgba(255,255,255,0.03)",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                      }}
+                      {/* Badge Icon */}
+                      <div
+                        className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl flex-shrink-0"
+                        style={{
+                          background: `${badge.color}22`,
+                          border: `1.5px solid ${badge.color}55`,
+                        }}
+                      >
+                        {badge.icon}
+                      </div>
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Award
+                            className="w-4 h-4"
+                            style={{ color: "#e8a838" }}
+                          />
+                          <span
+                            className="font-black text-sm uppercase tracking-wide"
+                            style={{ color: badge.color }}
+                          >
+                            {badge.label}
+                          </span>
+                          <span
+                            className="ml-auto font-black text-xl"
+                            style={{ color: "#6abf69" }}
+                          >
+                            {pts.toLocaleString()} điểm
+                          </span>
+                        </div>
+                        {/* Progress bar */}
+                        <div
+                          className="w-full h-2.5 rounded-full overflow-hidden"
+                          style={{ background: "rgba(255,255,255,0.08)" }}
+                        >
+                          <motion.div
+                            className="h-full rounded-full"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${progress}%` }}
+                            transition={{ duration: 1, ease: "easeOut" }}
+                            style={{
+                              background: `linear-gradient(90deg, #6abf69, #e8a838)`,
+                            }}
+                          />
+                        </div>
+                        <p className="text-xs text-zinc-500 mt-1">
+                          {nextTier
+                            ? `${pts.toLocaleString()} / ${nextTier.toLocaleString()} điểm đến hạng tiếp theo`
+                            : "🎉 Bạn đã đạt hạng cao nhất — VIP 🌳"}
+                        </p>
+                        <p className="text-xs text-zinc-600 mt-0.5">
+                          Mỗi 1.000đ mua sắm = 1 điểm
+                        </p>
+                      </div>
+                    </motion.div>
+                  );
+                })()}
+
+                {/* Tab switcher */}
+                <div className="flex gap-2">
+                  {(
+                    [
+                      {
+                        id: "overview",
+                        label: language === "vi" ? "Đơn hàng" : "Orders",
+                        icon: <History className="w-4 h-4" />,
+                      },
+                      {
+                        id: "edit",
+                        label:
+                          language === "vi"
+                            ? "Chỉnh sửa hồ sơ"
+                            : "Edit Profile",
+                        icon: <Pencil className="w-4 h-4" />,
+                      },
+                    ] as const
+                  ).map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setProfileTab(tab.id)}
+                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all border ${
+                        profileTab === tab.id
+                          ? "text-black border-transparent"
+                          : darkMode
+                            ? "bg-white/5 border-white/10 text-zinc-400 hover:text-white"
+                            : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900"
+                      }`}
+                      style={
+                        profileTab === tab.id
+                          ? {
+                              background:
+                                "linear-gradient(135deg, #6abf69, #e8a838)",
+                            }
+                          : {}
+                      }
                     >
-                      <ShoppingCart
-                        className="w-16 h-16 mx-auto mb-4"
-                        style={{ color: "rgba(255,255,255,0.08)" }}
-                      />
-                      <p className="text-zinc-500 font-medium">
-                        {t("profile.noOrders")}
-                      </p>
-                      <button
-                        onClick={() => setView("shop")}
-                        className="mt-6 px-8 py-3 rounded-xl font-black text-black"
+                      {tab.icon}
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* ── Edit Profile Form ── */}
+                {profileTab === "edit" && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="rounded-[32px] p-8 space-y-6"
+                    style={{
+                      background: darkMode ? "rgba(255,255,255,0.03)" : "white",
+                      border: `1px solid ${darkMode ? "rgba(255,255,255,0.08)" : "#e4e4e7"}`,
+                    }}
+                  >
+                    <h3
+                      className={`text-xl font-black ${darkMode ? "text-white" : "text-zinc-900"}`}
+                    >
+                      {language === "vi"
+                        ? "Thông tin cá nhân"
+                        : "Personal Information"}
+                    </h3>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                      {/* Display name */}
+                      <div className="space-y-2">
+                        <label
+                          className={`text-xs font-black uppercase tracking-widest ${darkMode ? "text-zinc-400" : "text-zinc-500"}`}
+                        >
+                          {language === "vi" ? "Tên hiển thị" : "Display Name"}
+                        </label>
+                        <input
+                          type="text"
+                          value={profileForm.name}
+                          onChange={(e) =>
+                            setProfileForm((f) => ({
+                              ...f,
+                              name: e.target.value,
+                            }))
+                          }
+                          placeholder={currentUser.name}
+                          className={`w-full px-4 py-3 rounded-2xl text-sm font-medium outline-none border transition-all ${
+                            darkMode
+                              ? "bg-white/5 border-white/10 text-white placeholder-zinc-500 focus:border-[#6abf69]/60"
+                              : "bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-[#6abf69]"
+                          }`}
+                        />
+                      </div>
+
+                      {/* Phone */}
+                      <div className="space-y-2">
+                        <label
+                          className={`text-xs font-black uppercase tracking-widest ${darkMode ? "text-zinc-400" : "text-zinc-500"}`}
+                        >
+                          {language === "vi" ? "Số điện thoại" : "Phone"}
+                        </label>
+                        <input
+                          type="tel"
+                          value={profileForm.phone}
+                          onChange={(e) =>
+                            setProfileForm((f) => ({
+                              ...f,
+                              phone: e.target.value,
+                            }))
+                          }
+                          placeholder="0912 345 678"
+                          className={`w-full px-4 py-3 rounded-2xl text-sm font-medium outline-none border transition-all ${
+                            darkMode
+                              ? "bg-white/5 border-white/10 text-white placeholder-zinc-500 focus:border-[#6abf69]/60"
+                              : "bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-[#6abf69]"
+                          }`}
+                        />
+                      </div>
+
+                      {/* Address — full width */}
+                      <div className="space-y-2 sm:col-span-2">
+                        <label
+                          className={`text-xs font-black uppercase tracking-widest ${darkMode ? "text-zinc-400" : "text-zinc-500"}`}
+                        >
+                          {language === "vi" ? "Địa chỉ" : "Address"}
+                        </label>
+                        <input
+                          type="text"
+                          value={profileForm.address}
+                          onChange={(e) =>
+                            setProfileForm((f) => ({
+                              ...f,
+                              address: e.target.value,
+                            }))
+                          }
+                          placeholder={
+                            language === "vi"
+                              ? "123 Đường ABC, Quận 1, TP.HCM"
+                              : "123 Main St, City"
+                          }
+                          className={`w-full px-4 py-3 rounded-2xl text-sm font-medium outline-none border transition-all ${
+                            darkMode
+                              ? "bg-white/5 border-white/10 text-white placeholder-zinc-500 focus:border-[#6abf69]/60"
+                              : "bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-[#6abf69]"
+                          }`}
+                        />
+                      </div>
+
+                      {/* Bio — full width */}
+                      <div className="space-y-2 sm:col-span-2">
+                        <label
+                          className={`text-xs font-black uppercase tracking-widest ${darkMode ? "text-zinc-400" : "text-zinc-500"}`}
+                        >
+                          {language === "vi" ? "Giới thiệu bản thân" : "Bio"}
+                        </label>
+                        <textarea
+                          value={profileForm.bio}
+                          onChange={(e) =>
+                            setProfileForm((f) => ({
+                              ...f,
+                              bio: e.target.value,
+                            }))
+                          }
+                          rows={3}
+                          placeholder={
+                            language === "vi"
+                              ? "Viết vài dòng về bản thân..."
+                              : "Tell us a little about yourself..."
+                          }
+                          className={`w-full px-4 py-3 rounded-2xl text-sm font-medium outline-none border transition-all resize-none ${
+                            darkMode
+                              ? "bg-white/5 border-white/10 text-white placeholder-zinc-500 focus:border-[#6abf69]/60"
+                              : "bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-[#6abf69]"
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Avatar color */}
+                    <div className="space-y-3">
+                      <label
+                        className={`text-xs font-black uppercase tracking-widest ${darkMode ? "text-zinc-400" : "text-zinc-500"}`}
+                      >
+                        {language === "vi" ? "Màu avatar" : "Avatar Color"}
+                      </label>
+                      <div className="flex items-center gap-3">
+                        {[
+                          "#6abf69",
+                          "#e8a838",
+                          "#60a5fa",
+                          "#f472b6",
+                          "#a78bfa",
+                          "#f97316",
+                        ].map((c) => (
+                          <button
+                            key={c}
+                            onClick={() =>
+                              setProfileForm((f) => ({ ...f, avatarColor: c }))
+                            }
+                            className="w-9 h-9 rounded-full transition-all hover:scale-110 flex items-center justify-center"
+                            style={{
+                              background: c,
+                              boxShadow:
+                                profileForm.avatarColor === c
+                                  ? `0 0 0 3px ${darkMode ? "#18181b" : "white"}, 0 0 0 5px ${c}`
+                                  : "none",
+                            }}
+                          >
+                            {profileForm.avatarColor === c && (
+                              <CheckCircle2 className="w-4 h-4 text-black" />
+                            )}
+                          </button>
+                        ))}
+                        {/* Preview */}
+                        <div
+                          className="w-12 h-12 rounded-full flex items-center justify-center text-xl font-black ml-4"
+                          style={{
+                            background: `linear-gradient(135deg, ${profileForm.avatarColor}, #e8a838)`,
+                          }}
+                        >
+                          {(profileForm.name || currentUser.name)
+                            .charAt(0)
+                            .toUpperCase()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Save button */}
+                    <div className="flex items-center gap-4 pt-2">
+                      <motion.button
+                        onClick={saveProfile}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.97 }}
+                        className="px-8 py-3.5 rounded-2xl font-black text-black text-sm transition-all"
                         style={{
                           background:
                             "linear-gradient(135deg, #6abf69, #e8a838)",
                         }}
                       >
-                        {t("profile.goShop")}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {userOrders.map((order) => {
-                        const items =
-                          typeof order.items === "string"
-                            ? (() => {
-                                try {
-                                  return JSON.parse(order.items as string);
-                                } catch {
-                                  return [];
-                                }
-                              })()
-                            : order.items || [];
-                        const statusSteps = [
-                          "PENDING",
-                          "CONFIRMED",
-                          "SHIPPING",
-                          "COMPLETED",
-                        ];
-                        const curStep = statusSteps.indexOf(order.status);
-                        const stepLabels: Record<string, string> = {
-                          PENDING: t("admin.statusPending"),
-                          CONFIRMED: t("admin.statusConfirmed"),
-                          SHIPPING: t("admin.statusShipping"),
-                          COMPLETED: t("admin.statusCompleted"),
-                        };
-                        return (
-                          <div
-                            key={order.id}
-                            className="rounded-3xl p-6 transition-all"
-                            style={{
-                              background: "rgba(255,255,255,0.03)",
-                              border: "1px solid rgba(255,255,255,0.08)",
-                            }}
+                        {language === "vi" ? "Lưu thay đổi" : "Save Changes"}
+                      </motion.button>
+                      <AnimatePresence>
+                        {profileSaved && (
+                          <motion.div
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0 }}
+                            className="flex items-center gap-2 text-sm font-bold text-emerald-400"
                           >
-                            <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                              <div>
-                                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                                  {t("profile.orderId")}
-                                </span>
-                                <p className="font-black text-xl">
-                                  #{order.id.toString().padStart(4, "0")}
-                                </p>
-                              </div>
-                              <div>
-                                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                                  {t("profile.orderDate")}
-                                </span>
-                                <p className="font-bold">
-                                  {new Date(
-                                    order.created_at || Date.now(),
-                                  ).toLocaleDateString("vi-VN")}
-                                </p>
-                              </div>
-                              <div>
-                                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                                  {t("profile.deliveryBy")}
-                                </span>
-                                <p
-                                  className="font-bold"
-                                  style={{ color: "#6abf69" }}
+                            <CheckCircle2 className="w-4 h-4" />
+                            {language === "vi"
+                              ? "Đã lưu thành công!"
+                              : "Saved!"}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* ── Order History ── */}
+                {profileTab === "overview" && (
+                  <div>
+                    <h3 className="text-2xl font-black mb-6 flex items-center gap-3">
+                      <History
+                        className="w-6 h-6"
+                        style={{ color: "#6abf69" }}
+                      />
+                      <span
+                        style={{
+                          backgroundImage:
+                            "linear-gradient(135deg, #6abf69, #e8a838)",
+                          WebkitBackgroundClip: "text",
+                          WebkitTextFillColor: "transparent",
+                        }}
+                      >
+                        {t("profile.orderHistory")}
+                      </span>
+                    </h3>
+                    {userOrders.length === 0 ? (
+                      <div
+                        className="rounded-3xl p-16 text-center"
+                        style={{
+                          background: "rgba(255,255,255,0.03)",
+                          border: "1px solid rgba(255,255,255,0.08)",
+                        }}
+                      >
+                        <ShoppingCart
+                          className="w-16 h-16 mx-auto mb-4"
+                          style={{ color: "rgba(255,255,255,0.08)" }}
+                        />
+                        <p className="text-zinc-500 font-medium">
+                          {t("profile.noOrders")}
+                        </p>
+                        <button
+                          onClick={() => setView("shop")}
+                          className="mt-6 px-8 py-3 rounded-xl font-black text-black"
+                          style={{
+                            background:
+                              "linear-gradient(135deg, #6abf69, #e8a838)",
+                          }}
+                        >
+                          {t("profile.goShop")}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {userOrders.map((order) => {
+                          const items =
+                            typeof order.items === "string"
+                              ? (() => {
+                                  try {
+                                    return JSON.parse(order.items as string);
+                                  } catch {
+                                    return [];
+                                  }
+                                })()
+                              : order.items || [];
+                          const statusSteps = [
+                            "PENDING",
+                            "CONFIRMED",
+                            "SHIPPING",
+                            "COMPLETED",
+                          ];
+                          const curStep = statusSteps.indexOf(order.status);
+                          const stepLabels: Record<string, string> = {
+                            PENDING: t("admin.statusPending"),
+                            CONFIRMED: t("admin.statusConfirmed"),
+                            SHIPPING: t("admin.statusShipping"),
+                            COMPLETED: t("admin.statusCompleted"),
+                          };
+                          return (
+                            <div
+                              key={order.id}
+                              className="rounded-3xl p-6 transition-all"
+                              style={{
+                                background: "rgba(255,255,255,0.03)",
+                                border: "1px solid rgba(255,255,255,0.08)",
+                              }}
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                                <div>
+                                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                                    {t("profile.orderId")}
+                                  </span>
+                                  <p className="font-black text-xl">
+                                    #{order.id.toString().padStart(4, "0")}
+                                  </p>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                                    {t("profile.orderDate")}
+                                  </span>
+                                  <p className="font-bold">
+                                    {new Date(
+                                      order.created_at || Date.now(),
+                                    ).toLocaleDateString("vi-VN")}
+                                  </p>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                                    {t("profile.deliveryBy")}
+                                  </span>
+                                  <p
+                                    className="font-bold"
+                                    style={{ color: "#6abf69" }}
+                                  >
+                                    {getDeliveryDate(order.created_at)}
+                                  </p>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                                    {t("profile.total")}
+                                  </span>
+                                  <p className="font-black text-xl">
+                                    {fmtVND(order.total)}
+                                  </p>
+                                </div>
+                                <span
+                                  className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase ${statusColor[order.status] || "bg-zinc-100 text-zinc-600"}`}
                                 >
-                                  {getDeliveryDate(order.created_at)}
-                                </p>
-                              </div>
-                              <div>
-                                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                                  {t("profile.total")}
+                                  {order.status}
                                 </span>
-                                <p className="font-black text-xl">
-                                  {fmtVND(order.total)}
-                                </p>
                               </div>
-                              <span
-                                className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase ${statusColor[order.status] || "bg-zinc-100 text-zinc-600"}`}
-                              >
-                                {order.status}
-                              </span>
-                            </div>
-                            {items.length > 0 && (
-                              <div className="flex flex-wrap gap-3 pt-4 border-t border-white/10">
-                                {(items as any[]).map(
-                                  (item: any, i: number) => (
-                                    <div
-                                      key={i}
-                                      className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"
-                                    >
-                                      <img
-                                        src={getProductImage(item)}
-                                        className="w-8 h-8 rounded-lg object-cover"
-                                        alt={item.name}
-                                      />
-                                      <span className="text-sm font-bold text-white">
-                                        {item.name}
+                              {items.length > 0 && (
+                                <div className="flex flex-wrap gap-3 pt-4 border-t border-white/10">
+                                  {(items as any[]).map(
+                                    (item: any, i: number) => (
+                                      <div
+                                        key={i}
+                                        className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"
+                                      >
+                                        <img
+                                          src={getProductImage(item)}
+                                          className="w-8 h-8 rounded-lg object-cover"
+                                          alt={item.name}
+                                        />
+                                        <span className="text-sm font-bold text-white">
+                                          {item.name}
+                                        </span>
+                                      </div>
+                                    ),
+                                  )}
+                                </div>
+                              )}
+                              {/* Delivery progress */}
+                              <div className="mt-4 pt-4 border-t border-white/10 flex items-center gap-1">
+                                {statusSteps.map((s, i) => (
+                                  <React.Fragment key={s}>
+                                    <div className="flex flex-col items-center">
+                                      <div
+                                        className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${i <= curStep ? "text-black" : "bg-white/10 text-zinc-600"}`}
+                                        style={
+                                          i <= curStep
+                                            ? {
+                                                background:
+                                                  "linear-gradient(135deg, #6abf69, #e8a838)",
+                                              }
+                                            : {}
+                                        }
+                                      >
+                                        {i + 1}
+                                      </div>
+                                      <span
+                                        className={`text-[9px] font-bold mt-1 ${i <= curStep ? "text-[#6abf69]" : "text-zinc-600"}`}
+                                      >
+                                        {stepLabels[s]}
                                       </span>
                                     </div>
-                                  ),
-                                )}
+                                    {i < 3 && (
+                                      <div
+                                        className={`h-1 w-10 rounded mb-4 ${i < curStep ? "bg-gradient-to-r from-[#6abf69] to-[#e8a838]" : "bg-white/10"}`}
+                                      />
+                                    )}
+                                  </React.Fragment>
+                                ))}
                               </div>
-                            )}
-                            {/* Delivery progress */}
-                            <div className="mt-4 pt-4 border-t border-white/10 flex items-center gap-1">
-                              {statusSteps.map((s, i) => (
-                                <React.Fragment key={s}>
-                                  <div className="flex flex-col items-center">
-                                    <div
-                                      className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${i <= curStep ? "text-black" : "bg-white/10 text-zinc-600"}`}
-                                      style={
-                                        i <= curStep
-                                          ? {
-                                              background:
-                                                "linear-gradient(135deg, #6abf69, #e8a838)",
-                                            }
-                                          : {}
-                                      }
-                                    >
-                                      {i + 1}
-                                    </div>
-                                    <span
-                                      className={`text-[9px] font-bold mt-1 ${i <= curStep ? "text-[#6abf69]" : "text-zinc-600"}`}
-                                    >
-                                      {stepLabels[s]}
-                                    </span>
-                                  </div>
-                                  {i < 3 && (
-                                    <div
-                                      className={`h-1 w-10 rounded mb-4 ${i < curStep ? "bg-gradient-to-r from-[#6abf69] to-[#e8a838]" : "bg-white/10"}`}
-                                    />
-                                  )}
-                                </React.Fragment>
-                              ))}
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -3002,7 +3876,10 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setSelectedProduct(null)}
+              onClick={() => {
+                setSelectedProduct(null);
+                setPreviewFilter("");
+              }}
               className="fixed inset-0 bg-black/70 backdrop-blur-md z-[60]"
             />
             <div className="fixed inset-0 z-[61] flex items-center justify-center p-4">
@@ -3023,7 +3900,10 @@ export default function App() {
               >
                 {/* Close button */}
                 <button
-                  onClick={() => setSelectedProduct(null)}
+                  onClick={() => {
+                    setSelectedProduct(null);
+                    setPreviewFilter("");
+                  }}
                   className="absolute top-4 right-4 z-10 w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110"
                   style={{
                     background: "rgba(255,255,255,0.1)",
@@ -3040,6 +3920,10 @@ export default function App() {
                       src={getProductImage(selectedProduct)}
                       alt={selectedProduct.name}
                       className="w-full h-64 sm:h-full object-cover"
+                      style={{
+                        filter: previewFilter,
+                        transition: "filter 0.4s ease",
+                      }}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
                     {selectedProduct.stock < 1 && (
@@ -3049,6 +3933,61 @@ export default function App() {
                         </span>
                       </div>
                     )}
+                    {/* Color Preview Swatches (Feature A) */}
+                    <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2 px-3">
+                      {[
+                        { label: "Original", filter: "", bg: "#e5e7eb" },
+                        {
+                          label: "Warm",
+                          filter: "sepia(0.4) saturate(1.4) hue-rotate(340deg)",
+                          bg: "#fbbf24",
+                        },
+                        {
+                          label: "Cool",
+                          filter:
+                            "saturate(1.3) hue-rotate(180deg) brightness(1.05)",
+                          bg: "#60a5fa",
+                        },
+                        {
+                          label: "Rose",
+                          filter: "hue-rotate(300deg) saturate(1.5)",
+                          bg: "#f472b6",
+                        },
+                        {
+                          label: "Forest",
+                          filter: "hue-rotate(80deg) saturate(1.6)",
+                          bg: "#6abf69",
+                        },
+                        {
+                          label: "Gold",
+                          filter: "sepia(0.6) saturate(2) brightness(1.1)",
+                          bg: "#e8a838",
+                        },
+                        {
+                          label: "Mono",
+                          filter: "grayscale(1)",
+                          bg: "#71717a",
+                        },
+                      ].map((c) => (
+                        <button
+                          key={c.label}
+                          title={c.label}
+                          onClick={() => setPreviewFilter(c.filter)}
+                          className="w-6 h-6 rounded-full border-2 transition-transform hover:scale-125"
+                          style={{
+                            background: c.bg,
+                            borderColor:
+                              previewFilter === c.filter
+                                ? "white"
+                                : "transparent",
+                            boxShadow:
+                              previewFilter === c.filter
+                                ? "0 0 0 2px #6abf69"
+                                : "0 1px 4px rgba(0,0,0,0.4)",
+                          }}
+                        />
+                      ))}
+                    </div>
                   </div>
 
                   {/* Info */}
@@ -3574,6 +4513,36 @@ export default function App() {
                         {t("checkout.confirmedDesc")}
                       </p>
                     </div>
+                    {/* Loyalty Points Earned (Feature F) */}
+                    {lastEarnedPoints > 0 && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        transition={{
+                          delay: 0.3,
+                          type: "spring",
+                          stiffness: 300,
+                        }}
+                        className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl mx-auto"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, #6abf6922, #e8a83822)",
+                          border: "1px solid #6abf6944",
+                        }}
+                      >
+                        <Zap className="w-5 h-5" style={{ color: "#e8a838" }} />
+                        <span
+                          className="font-black text-lg"
+                          style={{ color: "#6abf69" }}
+                        >
+                          +{lastEarnedPoints} điểm tích lũy
+                        </span>
+                        <Award
+                          className="w-5 h-5"
+                          style={{ color: "#e8a838" }}
+                        />
+                      </motion.div>
+                    )}
                     <button
                       onClick={() => {
                         setIsCheckoutOpen(false);
@@ -4342,6 +5311,110 @@ export default function App() {
             <ShoppingCart className="w-3 h-3 text-black" />
           </motion.div>
         ))}
+      </AnimatePresence>
+
+      {/* ── FLAPPY CART MODAL (AAA) ── */}
+      <AnimatePresence>
+        {flappyOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/85 backdrop-blur-md z-[200]"
+              onClick={() => setFlappyOpen(false)}
+            />
+            <div className="fixed inset-0 z-[201] flex items-center justify-center p-4 pointer-events-none">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.85, y: 30 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.85, y: 30 }}
+                transition={{ type: "spring", damping: 22, stiffness: 280 }}
+                className="relative rounded-[32px] overflow-hidden pointer-events-auto"
+                style={{
+                  background: "#0a2a1a",
+                  border: "2px solid rgba(106,191,105,0.4)",
+                  boxShadow: "0 0 60px rgba(106,191,105,0.25)",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">🛒</span>
+                    <h2 className="font-black text-white text-xl">Flappy Cart</h2>
+                    <span
+                      className="text-xs font-bold px-2 py-0.5 rounded-full ml-2"
+                      style={{ background: "rgba(106,191,105,0.2)", color: "#6abf69" }}
+                    >
+                      Vượt 5 cột → nhận FLAPPY10
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setFlappyOpen(false)}
+                    className="text-zinc-400 hover:text-white transition-colors ml-4"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                {/* Canvas */}
+                <div className="relative">
+                  <canvas
+                    ref={flappyCanvasRef}
+                    width={480}
+                    height={360}
+                    className="block"
+                  />
+                  <AnimatePresence>
+                    {flappyOverlay === "over" && (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 flex flex-col items-center justify-center gap-4"
+                        style={{ background: "rgba(0,0,0,0.72)" }}
+                      >
+                        <p className="text-5xl">😢</p>
+                        <p className="text-white font-black text-2xl">Thua rồi!</p>
+                        <p className="text-zinc-400 text-sm">Click / Space để chơi lại</p>
+                      </motion.div>
+                    )}
+                    {flappyOverlay === "won" && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 flex flex-col items-center justify-center gap-4"
+                        style={{ background: "rgba(0,0,0,0.82)" }}
+                      >
+                        <p className="text-5xl">🎉</p>
+                        <p className="font-black text-2xl" style={{ color: "#6abf69" }}>Thắng rồi!</p>
+                        <div
+                          className="px-8 py-4 rounded-2xl text-center"
+                          style={{
+                            background: "linear-gradient(135deg, rgba(106,191,105,0.2), rgba(232,168,56,0.2))",
+                            border: "1.5px solid rgba(232,168,56,0.5)",
+                          }}
+                        >
+                          <p className="text-zinc-400 text-xs font-bold uppercase tracking-widest mb-1">Mã giảm giá</p>
+                          <p className="font-black text-3xl text-white tracking-widest">FLAPPY10</p>
+                          <p className="text-zinc-500 text-xs mt-1">Giảm 10% đơn hàng tiếp theo</p>
+                        </div>
+                        <p className="text-zinc-500 text-xs">Click để chơi lại</p>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+                {/* Footer */}
+                <div className="px-6 py-3 border-t border-white/10 text-center">
+                  <p className="text-zinc-600 text-xs font-bold">
+                    🖱 Click hoặc Space để bay · Tránh các cột giá 💰
+                  </p>
+                </div>
+              </motion.div>
+            </div>
+          </>
+        )}
       </AnimatePresence>
 
       {/* ── FLOATING DEBUG BUTTON ── */}
