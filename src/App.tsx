@@ -29,6 +29,8 @@ import {
   Star,
   History,
   MapPin,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -132,6 +134,7 @@ export default function App() {
   const [view, setView] = useState<"shop" | "debug" | "admin" | "profile">(
     "shop",
   );
+  const [darkMode, setDarkMode] = useState(true);
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<Product[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -494,15 +497,16 @@ export default function App() {
   /* ═══════════════════════════════ JSX ═══════════════════════════════════ */
   return (
     <div
-      className="min-h-screen bg-zinc-950 font-sans text-white"
+      className={`min-h-screen ${darkMode ? "bg-zinc-950 text-white" : "bg-slate-100 text-zinc-900"} font-sans`}
       style={{
-        backgroundImage:
-          "radial-gradient(ellipse at 20% 50%, rgba(139,92,246,0.07) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(6,182,212,0.07) 0%, transparent 60%)",
+        backgroundImage: darkMode
+          ? "radial-gradient(ellipse at 20% 50%, rgba(139,92,246,0.07) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(6,182,212,0.07) 0%, transparent 60%)"
+          : "radial-gradient(ellipse at 20% 50%, rgba(139,92,246,0.04) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(6,182,212,0.04) 0%, transparent 60%)",
       }}
     >
       {/* ── NAVBAR ── */}
       <nav
-        className="sticky top-0 z-50 bg-zinc-950/90 backdrop-blur-xl border-b border-white/5 px-8 py-5 flex items-center justify-between"
+        className={`sticky top-0 z-50 ${darkMode ? "bg-zinc-950/90 border-white/5" : "bg-white/90 border-zinc-200"} backdrop-blur-xl border-b px-8 py-5 flex items-center justify-between`}
         style={{ boxShadow: "0 0 40px rgba(139,92,246,0.08)" }}
       >
         <div className="flex items-center gap-10">
@@ -513,12 +517,16 @@ export default function App() {
               </div>
               <div className="absolute inset-0 bg-gradient-to-br from-cyan-400 to-purple-600 rounded-xl blur-md opacity-50 -z-10" />
             </div>
-            <span className="text-white">OMNI</span>
+            <span className={darkMode ? "text-white" : "text-zinc-900"}>
+              OMNI
+            </span>
             <span className="bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">
               SHOP
             </span>
           </h1>
-          <div className="hidden lg:flex items-center gap-1 bg-white/5 p-1 rounded-2xl border border-white/10">
+          <div
+            className={`hidden lg:flex items-center gap-1 ${darkMode ? "bg-white/5 border-white/10" : "bg-zinc-100 border-zinc-200"} p-1 rounded-2xl border`}
+          >
             {[
               { id: "shop" as const, label: t("nav.store") },
               ...(currentUser?.role === "admin"
@@ -532,7 +540,9 @@ export default function App() {
                 className={`px-5 py-2.5 rounded-xl text-sm font-black uppercase tracking-widest transition-all ${
                   view === item.id
                     ? "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-400 border border-cyan-500/30"
-                    : "text-zinc-400 hover:text-white hover:bg-white/5"
+                    : darkMode
+                      ? "text-zinc-400 hover:text-white hover:bg-white/5"
+                      : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/70"
                 }`}
               >
                 {item.label}
@@ -552,8 +562,19 @@ export default function App() {
         <div className="flex items-center gap-3">
           <LanguageSwitcher />
           <button
+            onClick={() => setDarkMode(!darkMode)}
+            title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            className={`p-2.5 ${darkMode ? "bg-white/5 hover:bg-white/10 border-white/10" : "bg-zinc-100 hover:bg-zinc-200 border-zinc-300"} border rounded-xl transition-all`}
+          >
+            {darkMode ? (
+              <Sun className="w-5 h-5 text-amber-400" />
+            ) : (
+              <Moon className="w-5 h-5 text-violet-600" />
+            )}
+          </button>
+          <button
             onClick={() => setIsCartOpen(true)}
-            className="relative p-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all"
+            className={`relative p-2.5 ${darkMode ? "bg-white/5 hover:bg-white/10 border-white/10" : "bg-zinc-100 hover:bg-zinc-200 border-zinc-300"} border rounded-xl transition-all`}
           >
             <ShoppingCart className="w-5 h-5" />
             {cart.length > 0 && (
@@ -814,12 +835,20 @@ export default function App() {
                       key={product.id}
                       whileHover={{ y: -10, scale: 1.02 }}
                       className="group relative rounded-[28px] p-5 transition-all cursor-pointer overflow-hidden"
-                      style={{
-                        background:
-                          "linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.06))",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        backdropFilter: "blur(10px)",
-                      }}
+                      style={
+                        darkMode
+                          ? {
+                              background:
+                                "linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.06))",
+                              border: "1px solid rgba(255,255,255,0.08)",
+                              backdropFilter: "blur(10px)",
+                            }
+                          : {
+                              background: "white",
+                              border: "1px solid rgba(0,0,0,0.08)",
+                              boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
+                            }
+                      }
                       onMouseEnter={(e) => (
                         (e.currentTarget.style.border =
                           "1px solid rgba(139,92,246,0.4)"),
@@ -832,7 +861,9 @@ export default function App() {
                         (e.currentTarget.style.boxShadow = "none")
                       )}
                     >
-                      <div className="aspect-square rounded-2xl overflow-hidden mb-5 bg-zinc-900 relative">
+                      <div
+                        className={`aspect-square rounded-2xl overflow-hidden mb-5 ${darkMode ? "bg-zinc-900" : "bg-zinc-100"} relative`}
+                      >
                         <img
                           src={product.image}
                           alt={product.name}
@@ -855,7 +886,9 @@ export default function App() {
                           {product.category}
                         </span>
                         <div className="flex justify-between items-start gap-2">
-                          <h4 className="font-black text-base text-white leading-snug">
+                          <h4
+                            className={`font-black text-base ${darkMode ? "text-white" : "text-zinc-900"} leading-snug`}
+                          >
                             {product.name}
                           </h4>
                           <p
@@ -1137,7 +1170,7 @@ export default function App() {
                     <button
                       key={tab}
                       onClick={() => setAdminTab(tab)}
-                      className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${adminTab === tab ? "bg-zinc-900 text-white" : "bg-white border border-zinc-200 hover:bg-zinc-50"}`}
+                      className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${adminTab === tab ? (darkMode ? "bg-white/15 text-white border border-white/20" : "bg-zinc-900 text-white") : darkMode ? "bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10 hover:text-white" : "bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50"}`}
                     >
                       {t(
                         `admin.tab${tab.charAt(0).toUpperCase() + tab.slice(1)}`,
@@ -1147,7 +1180,7 @@ export default function App() {
                 )}
                 <button
                   onClick={fetchData}
-                  className="p-2.5 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50"
+                  className={`p-2.5 ${darkMode ? "bg-white/5 border-white/10 hover:bg-white/10 text-zinc-300" : "bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50"} border rounded-xl`}
                 >
                   <RefreshCw className="w-4 h-4" />
                 </button>
@@ -1162,48 +1195,52 @@ export default function App() {
                       label: t("admin.totalRevenue"),
                       value: fmtVND(stats?.totalSales || 0),
                       icon: BarChart3,
-                      color: "text-emerald-600",
-                      bg: "bg-emerald-50",
+                      color: darkMode ? "text-emerald-400" : "text-emerald-600",
+                      bg: darkMode ? "bg-emerald-500/10" : "bg-emerald-50",
                     },
                     {
                       label: t("admin.totalOrders"),
                       value: stats?.orderCount || 0,
                       icon: ShoppingCart,
-                      color: "text-blue-600",
-                      bg: "bg-blue-50",
+                      color: darkMode ? "text-blue-400" : "text-blue-600",
+                      bg: darkMode ? "bg-blue-500/10" : "bg-blue-50",
                     },
                     {
                       label: t("admin.activeProducts"),
                       value: stats?.productCount || 0,
                       icon: Package,
-                      color: "text-purple-600",
-                      bg: "bg-purple-50",
+                      color: darkMode ? "text-purple-400" : "text-purple-600",
+                      bg: darkMode ? "bg-purple-500/10" : "bg-purple-50",
                     },
                     {
                       label: t("admin.systemHealth"),
                       value: "99.9%",
                       icon: CheckCircle2,
-                      color: "text-zinc-600",
-                      bg: "bg-zinc-50",
+                      color: darkMode ? "text-zinc-300" : "text-zinc-600",
+                      bg: darkMode ? "bg-zinc-700/50" : "bg-zinc-50",
                     },
                   ].map((s) => (
                     <div
                       key={s.label}
-                      className="bg-white p-8 rounded-[32px] border border-zinc-200 shadow-sm"
+                      className={`p-8 rounded-[32px] border ${darkMode ? "bg-zinc-800/50 border-white/8" : "bg-white border-zinc-200 shadow-sm"}`}
                     >
                       <div
                         className={`${s.bg} ${s.color} w-12 h-12 rounded-2xl flex items-center justify-center mb-6`}
                       >
                         <s.icon className="w-6 h-6" />
                       </div>
-                      <p className="text-zinc-500 font-bold text-sm uppercase tracking-widest mb-1">
+                      <p
+                        className={`${darkMode ? "text-zinc-400" : "text-zinc-500"} font-bold text-sm uppercase tracking-widest mb-1`}
+                      >
                         {s.label}
                       </p>
                       <p className="text-3xl font-black">{String(s.value)}</p>
                     </div>
                   ))}
                 </div>
-                <div className="bg-white p-8 rounded-[40px] border border-zinc-200 shadow-sm h-[360px]">
+                <div
+                  className={`p-8 rounded-[40px] border h-[360px] ${darkMode ? "bg-zinc-800/40 border-white/8" : "bg-white border-zinc-200 shadow-sm"}`}
+                >
                   <h3 className="text-xl font-black mb-8">
                     {t("admin.revenueTrend")}
                   </h3>
@@ -1226,7 +1263,7 @@ export default function App() {
                       <CartesianGrid
                         strokeDasharray="3 3"
                         vertical={false}
-                        stroke="#f1f5f9"
+                        stroke={darkMode ? "rgba(255,255,255,0.06)" : "#f1f5f9"}
                       />
                       <XAxis
                         dataKey="date"
@@ -1279,7 +1316,7 @@ export default function App() {
                   {products.map((p) => (
                     <div
                       key={p.id}
-                      className="bg-white rounded-3xl border border-zinc-200 overflow-hidden shadow-sm hover:shadow-lg transition-all"
+                      className={`rounded-3xl border overflow-hidden transition-all ${darkMode ? "bg-zinc-800/50 border-white/8 hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(139,92,246,0.12)]" : "bg-white border-zinc-200 shadow-sm hover:shadow-lg"}`}
                     >
                       <img
                         src={p.image}
@@ -1293,7 +1330,9 @@ export default function App() {
                         <h4 className="font-black text-lg mt-1 mb-1">
                           {p.name}
                         </h4>
-                        <p className="text-xl font-black text-zinc-900 mb-1">
+                        <p
+                          className={`text-xl font-black ${darkMode ? "" : "text-zinc-900"} mb-1`}
+                        >
                           {fmtVND(p.price)}
                         </p>
                         <p className="text-xs text-zinc-400 mb-4">
@@ -1302,7 +1341,7 @@ export default function App() {
                         <div className="flex gap-2">
                           <button
                             onClick={() => openEdit(p)}
-                            className="flex-1 flex items-center justify-center gap-1 py-2 bg-zinc-100 hover:bg-zinc-200 rounded-xl font-bold text-sm"
+                            className={`flex-1 flex items-center justify-center gap-1 py-2 ${darkMode ? "bg-white/10 hover:bg-white/15 text-zinc-200" : "bg-zinc-100 hover:bg-zinc-200 text-zinc-800"} rounded-xl font-bold text-sm`}
                           >
                             <Pencil className="w-3.5 h-3.5" />
                             {t("common.edit")}
@@ -1323,15 +1362,21 @@ export default function App() {
             )}
 
             {adminTab === "orders" && (
-              <div className="bg-white rounded-[40px] border border-zinc-200 shadow-sm overflow-hidden">
-                <div className="p-8 border-b border-zinc-100">
+              <div
+                className={`rounded-[40px] border overflow-hidden ${darkMode ? "bg-zinc-800/40 border-white/8" : "bg-white border-zinc-200 shadow-sm"}`}
+              >
+                <div
+                  className={`p-8 border-b ${darkMode ? "border-white/8" : "border-zinc-100"}`}
+                >
                   <h3 className="text-xl font-black">
                     {t("admin.recentOrders")}
                   </h3>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-zinc-50 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">
+                    <thead
+                      className={`text-[10px] font-black uppercase tracking-[0.2em] ${darkMode ? "bg-white/5 text-zinc-500" : "bg-zinc-50 text-zinc-400"}`}
+                    >
                       <tr>
                         {[
                           t("admin.orderId"),
@@ -1346,7 +1391,9 @@ export default function App() {
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-100">
+                    <tbody
+                      className={`divide-y ${darkMode ? "divide-white/5" : "divide-zinc-100"}`}
+                    >
                       {orders.length === 0 ? (
                         <tr>
                           <td
@@ -1360,7 +1407,7 @@ export default function App() {
                         orders.map((order) => (
                           <tr
                             key={order.id}
-                            className="hover:bg-zinc-50/50 transition-colors"
+                            className={`transition-colors ${darkMode ? "hover:bg-white/3" : "hover:bg-zinc-50/50"}`}
                           >
                             <td className="px-8 py-6 font-mono font-bold text-zinc-400">
                               #{order.id.toString().padStart(4, "0")}
@@ -1441,7 +1488,7 @@ export default function App() {
                   {partners.map((p) => (
                     <div
                       key={p.id}
-                      className="bg-white rounded-3xl border border-zinc-200 p-6 shadow-sm hover:shadow-md transition-all"
+                      className={`rounded-3xl border p-6 transition-all ${darkMode ? "bg-zinc-800/50 border-white/8 hover:border-cyan-500/30" : "bg-white border-zinc-200 shadow-sm hover:shadow-md"}`}
                     >
                       <div className="flex items-start justify-between mb-4">
                         <div>
