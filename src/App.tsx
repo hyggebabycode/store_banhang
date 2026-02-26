@@ -29,10 +29,13 @@ import {
   UserCheck,
   UserX,
   Star,
+  Heart,
+  Flame,
   History,
   MapPin,
   Sun,
   Moon,
+  SlidersHorizontal,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -165,6 +168,8 @@ export default function App() {
   const [priceRangeIdx, setPriceRangeIdx] = useState(-1); // -1 = tất cả
   const [colorFilter, setColorFilter] = useState(""); // "" = tất cả
   const [productsCatFilter, setProductsCatFilter] = useState("All");
+  const [wishlist, setWishlist] = useState<Set<number>>(new Set());
+  const [showFilters, setShowFilters] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<Product[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -983,207 +988,41 @@ export default function App() {
 
         {/* ════ PRODUCTS PAGE ════ */}
         {view === "products" && (
-          <div className="space-y-10">
-            {/* Breadcrumb */}
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setView("shop")}
-                className={`text-sm font-bold transition-colors ${
-                  darkMode
-                    ? "text-zinc-400 hover:text-white"
-                    : "text-zinc-500 hover:text-zinc-900"
-                }`}
-              >
-                ← {language === "vi" ? "Trang chủ" : "Home"}
-              </button>
-              <span className={darkMode ? "text-zinc-600" : "text-zinc-300"}>
-                /
-              </span>
-              <span className="text-sm font-bold" style={{ color: "#22d3ee" }}>
-                {language === "vi" ? "Sản phẩm" : "Products"}
-              </span>
-            </div>
-
-            {/* Page title */}
-            <div>
-              <h2 className="text-5xl font-black tracking-tighter mb-2">
-                <span
-                  style={{
-                    backgroundImage:
-                      "linear-gradient(135deg, #22d3ee, #a855f7)",
-                    WebkitBackgroundClip: "text",
-                    WebkitTextFillColor: "transparent",
-                  }}
+          <div className="space-y-5">
+            {/* Header row */}
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setView("shop")}
+                  className={`text-sm font-bold transition-colors ${
+                    darkMode
+                      ? "text-zinc-400 hover:text-white"
+                      : "text-zinc-500 hover:text-zinc-900"
+                  }`}
                 >
-                  {language === "vi" ? "Tất cả sản phẩm" : "All Products"}
+                  ← {language === "vi" ? "Trang chủ" : "Home"}
+                </button>
+                <span className={darkMode ? "text-zinc-700" : "text-zinc-300"}>
+                  /
                 </span>
-              </h2>
-              <p
-                className={`font-medium ${
-                  darkMode ? "text-zinc-500" : "text-zinc-500"
-                }`}
-              >
-                {productsPageFiltered.length}{" "}
-                {language === "vi" ? "sản phẩm" : "products"}
-              </p>
-            </div>
-
-            {/* ── Filter panel ── */}
-            <div
-              className={`rounded-[32px] p-8 flex flex-col gap-8 ${
-                darkMode
-                  ? "bg-zinc-800/50 border border-white/8"
-                  : "bg-white border border-zinc-200 shadow-sm"
-              }`}
-            >
-              {/* Row 1: Search by name */}
-              <div>
-                <p
-                  className={`text-xs font-black uppercase tracking-widest mb-3 ${
-                    darkMode ? "text-zinc-500" : "text-zinc-400"
-                  }`}
+                <span
+                  className="text-sm font-bold"
+                  style={{ color: "#22d3ee" }}
                 >
-                  {language === "vi" ? "🔍 Tìm kiếm" : "🔍 Search"}
-                </p>
-                <div className="relative">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-400" />
-                  <input
-                    type="text"
-                    placeholder={
-                      language === "vi"
-                        ? "Tìm theo tên sản phẩm..."
-                        : "Search by product name..."
-                    }
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className={`w-full pl-12 pr-4 py-4 rounded-2xl font-medium text-sm outline-none transition-all ${
-                      darkMode
-                        ? "bg-white/5 border border-white/10 text-white placeholder-zinc-500 focus:border-cyan-500/50 focus:bg-white/8"
-                        : "bg-zinc-50 border border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-cyan-400 focus:bg-white"
-                    }`}
-                  />
-                </div>
+                  {language === "vi" ? "Sản phẩm" : "Products"}
+                </span>
               </div>
-
-              {/* Row 2: Price ranges */}
-              <div>
-                <p
-                  className={`text-xs font-black uppercase tracking-widest mb-4 ${
-                    darkMode ? "text-zinc-500" : "text-zinc-400"
-                  }`}
+              <div className="flex items-center gap-3">
+                <span
+                  className={`text-sm font-medium ${darkMode ? "text-zinc-500" : "text-zinc-400"}`}
                 >
-                  {language === "vi" ? "💰 Khoảng giá" : "💰 Price range"}
-                </p>
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    onClick={() => setPriceRangeIdx(-1)}
-                    className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all border ${
-                      priceRangeIdx === -1
-                        ? "text-black border-transparent"
-                        : darkMode
-                          ? "border-white/10 text-zinc-400 hover:text-white hover:border-white/20 bg-white/5"
-                          : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
-                    }`}
-                    style={
-                      priceRangeIdx === -1
-                        ? {
-                            background:
-                              "linear-gradient(135deg, #22d3ee, #a855f7)",
-                          }
-                        : {}
-                    }
-                  >
-                    {language === "vi" ? "Tất cả" : "All prices"}
-                  </button>
-                  {PRICE_RANGES.map((r, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setPriceRangeIdx(i)}
-                      className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all border ${
-                        priceRangeIdx === i
-                          ? "text-black border-transparent"
-                          : darkMode
-                            ? "border-white/10 text-zinc-400 hover:text-white hover:border-white/20 bg-white/5"
-                            : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
-                      }`}
-                      style={
-                        priceRangeIdx === i
-                          ? {
-                              background:
-                                "linear-gradient(135deg, #22d3ee, #a855f7)",
-                            }
-                          : {}
-                      }
-                    >
-                      {language === "vi" ? r.labelVi : r.labelEn}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Row 3: Color swatches */}
-              <div>
-                <p
-                  className={`text-xs font-black uppercase tracking-widest mb-4 ${
-                    darkMode ? "text-zinc-500" : "text-zinc-400"
-                  }`}
-                >
-                  {language === "vi" ? "🎨 Màu sắc" : "🎨 Color"}
-                </p>
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    onClick={() => setColorFilter("")}
-                    className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all border ${
-                      colorFilter === ""
-                        ? "text-black border-transparent"
-                        : darkMode
-                          ? "border-white/10 text-zinc-400 hover:text-white hover:border-white/20 bg-white/5"
-                          : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
-                    }`}
-                    style={
-                      colorFilter === ""
-                        ? {
-                            background:
-                              "linear-gradient(135deg, #22d3ee, #a855f7)",
-                          }
-                        : {}
-                    }
-                  >
-                    {language === "vi" ? "Tất cả" : "All"}
-                  </button>
-                  {PRODUCT_COLORS.map((c) => (
-                    <button
-                      key={c.value}
-                      onClick={() =>
-                        setColorFilter(colorFilter === c.value ? "" : c.value)
-                      }
-                      title={language === "vi" ? c.labelVi : c.labelEn}
-                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all border ${
-                        colorFilter === c.value
-                          ? darkMode
-                            ? "border-cyan-500/60 bg-cyan-500/10 text-cyan-300"
-                            : "border-cyan-400 bg-cyan-50 text-cyan-700"
-                          : darkMode
-                            ? "border-white/10 text-zinc-400 hover:text-white hover:border-white/20 bg-white/5"
-                            : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
-                      }`}
-                    >
-                      <span
-                        className="w-4 h-4 rounded-full border-2 border-white/20 flex-shrink-0"
-                        style={{ backgroundColor: c.hex }}
-                      />
-                      {language === "vi" ? c.labelVi : c.labelEn}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Reset */}
-              {(searchQuery ||
-                priceRangeIdx !== -1 ||
-                colorFilter !== "" ||
-                productsCatFilter !== "All") && (
-                <div className="pt-2 border-t border-white/5">
+                  {productsPageFiltered.length}{" "}
+                  {language === "vi" ? "sản phẩm" : "items"}
+                </span>
+                {(searchQuery ||
+                  priceRangeIdx !== -1 ||
+                  colorFilter !== "" ||
+                  productsCatFilter !== "All") && (
                   <button
                     onClick={() => {
                       setSearchQuery("");
@@ -1191,169 +1030,295 @@ export default function App() {
                       setColorFilter("");
                       setProductsCatFilter("All");
                     }}
-                    className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                      darkMode
-                        ? "bg-white/5 text-zinc-400 hover:bg-red-500/10 hover:text-red-400 border border-white/10 hover:border-red-500/30"
-                        : "bg-zinc-100 text-zinc-500 hover:bg-red-50 hover:text-red-600 border border-zinc-200 hover:border-red-200"
-                    }`}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-all"
                   >
-                    × {language === "vi" ? "Xoá bộ lọc" : "Clear filters"}
+                    <X className="w-3 h-3" />{" "}
+                    {language === "vi" ? "Xóa bộ lọc" : "Clear"}
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
-            {/* Category pills */}
-            <div className="flex flex-wrap gap-2">
-              {categories.map((cat) => (
+            {/* ── Compact filter bar ── */}
+            <div
+              className={`rounded-2xl border ${
+                darkMode ? "bg-zinc-900/80 border-white/8" : "bg-white border-zinc-200 shadow-sm"
+              }`}
+            >
+              {/* Row 1: search + toggle button */}
+              <div className="flex items-center gap-3 p-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                  <input
+                    type="text"
+                    placeholder={language === "vi" ? "Tìm sản phẩm..." : "Search products..."}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className={`w-full pl-9 pr-3 py-2.5 rounded-xl text-sm font-medium outline-none transition-all ${
+                      darkMode
+                        ? "bg-white/5 border border-white/10 text-white placeholder-zinc-500 focus:border-cyan-500/50"
+                        : "bg-zinc-50 border border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-cyan-400"
+                    }`}
+                  />
+                </div>
                 <button
-                  key={cat}
-                  onClick={() => setProductsCatFilter(cat)}
-                  className={`px-5 py-2.5 rounded-full text-sm font-bold transition-all border ${
-                    productsCatFilter === cat
+                  onClick={() => setShowFilters(!showFilters)}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all border flex-shrink-0 ${
+                    showFilters
                       ? "text-black border-transparent"
                       : darkMode
-                        ? "border-white/10 text-zinc-400 hover:text-white hover:border-white/20 bg-white/5"
-                        : "border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-300 bg-white"
+                        ? "border-white/10 text-zinc-400 hover:text-white bg-white/5"
+                        : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
                   }`}
-                  style={
-                    productsCatFilter === cat
-                      ? {
-                          background:
-                            "linear-gradient(135deg, #22d3ee, #a855f7)",
-                        }
-                      : {}
-                  }
+                  style={showFilters ? { background: "linear-gradient(135deg, #22d3ee, #a855f7)" } : {}}
                 >
-                  {cat === "All" ? (language === "vi" ? "Tất cả" : "All") : cat}
+                  <SlidersHorizontal className="w-4 h-4" />
+                  {language === "vi" ? "Bộ lọc" : "Filters"}
+                  {(priceRangeIdx !== -1 || colorFilter !== "") && (
+                    <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                  )}
                 </button>
-              ))}
+              </div>
+
+              {/* Row 2: category pills */}
+              <div className={`px-3 pb-3 flex flex-wrap gap-2 border-t ${darkMode ? "border-white/5" : "border-zinc-100"}`}>
+                <div className="w-full" />
+                {categories.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setProductsCatFilter(cat)}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                      productsCatFilter === cat
+                        ? "text-black border-transparent"
+                        : darkMode
+                          ? "border-white/10 text-zinc-400 hover:text-white bg-white/5"
+                          : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-zinc-50"
+                    }`}
+                    style={productsCatFilter === cat ? { background: "linear-gradient(135deg, #22d3ee, #a855f7)" } : {}}
+                  >
+                    {cat === "All" ? (language === "vi" ? "Tất cả" : "All") : cat}
+                  </button>
+                ))}
+              </div>
+
+              {/* Expandable: price + color */}
+              <AnimatePresence>
+                {showFilters && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.22 }}
+                    style={{ overflow: "hidden" }}
+                  >
+                    <div className={`px-4 py-4 flex flex-col gap-4 border-t ${darkMode ? "border-white/5" : "border-zinc-100"}`}>
+                      {/* Price */}
+                      <div className="flex items-center flex-wrap gap-2">
+                        <span className={`text-xs font-black uppercase tracking-widest w-16 flex-shrink-0 ${darkMode ? "text-zinc-500" : "text-zinc-400"}`}>
+                          {language === "vi" ? "💰 Giá" : "💰 Price"}
+                        </span>
+                        {[{ label: language === "vi" ? "Tất cả" : "All", idx: -1 }, ...PRICE_RANGES.map((r, i) => ({ label: language === "vi" ? r.labelVi : r.labelEn, idx: i }))].map(({ label, idx }) => (
+                          <button
+                            key={idx}
+                            onClick={() => setPriceRangeIdx(idx)}
+                            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                              priceRangeIdx === idx
+                                ? "text-black border-transparent"
+                                : darkMode
+                                  ? "border-white/10 text-zinc-400 hover:text-white bg-white/5"
+                                  : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
+                            }`}
+                            style={priceRangeIdx === idx ? { background: "linear-gradient(135deg, #22d3ee, #a855f7)" } : {}}
+                          >{label}</button>
+                        ))}
+                      </div>
+                      {/* Color */}
+                      <div className="flex items-center flex-wrap gap-2">
+                        <span className={`text-xs font-black uppercase tracking-widest w-16 flex-shrink-0 ${darkMode ? "text-zinc-500" : "text-zinc-400"}`}>
+                          {language === "vi" ? "🎨 Màu" : "🎨 Color"}
+                        </span>
+                        <button
+                          onClick={() => setColorFilter("")}
+                          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                            colorFilter === ""
+                              ? "text-black border-transparent"
+                              : darkMode ? "border-white/10 text-zinc-400 hover:text-white bg-white/5" : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
+                          }`}
+                          style={colorFilter === "" ? { background: "linear-gradient(135deg, #22d3ee, #a855f7)" } : {}}
+                        >
+                          {language === "vi" ? "Tất cả" : "All"}
+                        </button>
+                        {PRODUCT_COLORS.map((c) => (
+                          <button
+                            key={c.value}
+                            onClick={() => setColorFilter(colorFilter === c.value ? "" : c.value)}
+                            title={language === "vi" ? c.labelVi : c.labelEn}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                              colorFilter === c.value
+                                ? darkMode ? "border-cyan-500/60 bg-cyan-500/10 text-cyan-300" : "border-cyan-400 bg-cyan-50 text-cyan-700"
+                                : darkMode ? "border-white/10 text-zinc-400 hover:text-white bg-white/5" : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
+                            }`}
+                          >
+                            <span className="w-3.5 h-3.5 rounded-full border border-white/20 flex-shrink-0" style={{ backgroundColor: c.hex }} />
+                            {language === "vi" ? c.labelVi : c.labelEn}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Product grid */}
             {loading ? (
               <div className="flex items-center justify-center h-48">
-                <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                <div className="w-10 h-10 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : productsPageFiltered.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-24 gap-4">
                 <PackageX className="w-16 h-16 text-zinc-600" />
-                <p
-                  className={`font-black text-xl ${
-                    darkMode ? "text-zinc-600" : "text-zinc-400"
-                  }`}
-                >
-                  {language === "vi"
-                    ? "Không tìm thấy sản phẩm nào"
-                    : "No products found"}
+                <p className={`font-black text-xl ${darkMode ? "text-zinc-600" : "text-zinc-400"}`}>
+                  {language === "vi" ? "Không tìm thấy sản phẩm nào" : "No products found"}
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-                {productsPageFiltered.map((product) => (
-                  <motion.div
-                    key={product.id}
-                    whileHover={{ y: -10, scale: 1.02 }}
-                    className="group relative rounded-[28px] p-5 transition-all cursor-pointer overflow-hidden"
-                    style={
-                      darkMode
-                        ? {
-                            background:
-                              "linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.06))",
-                            border: "1px solid rgba(255,255,255,0.08)",
-                            backdropFilter: "blur(10px)",
-                          }
-                        : {
-                            background: "white",
-                            border: "1px solid rgba(0,0,0,0.08)",
-                            boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
-                          }
-                    }
-                    onMouseEnter={(e) => (
-                      (e.currentTarget.style.border =
-                        "1px solid rgba(139,92,246,0.4)"),
-                      (e.currentTarget.style.boxShadow =
-                        "0 0 30px rgba(139,92,246,0.15)")
-                    )}
-                    onMouseLeave={(e) => (
-                      (e.currentTarget.style.border = darkMode
-                        ? "1px solid rgba(255,255,255,0.08)"
-                        : "1px solid rgba(0,0,0,0.08)"),
-                      (e.currentTarget.style.boxShadow = darkMode
-                        ? "none"
-                        : "0 2px 12px rgba(0,0,0,0.06)")
-                    )}
-                  >
-                    <div
-                      className={`aspect-square rounded-2xl overflow-hidden mb-5 ${
-                        darkMode ? "bg-zinc-900" : "bg-zinc-100"
-                      } relative`}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
+                {productsPageFiltered.map((product) => {
+                  const isHot = product.id % 5 < 2;
+                  const assignedColor = PRODUCT_COLORS[product.id % PRODUCT_COLORS.length];
+                  const isWishlisted = wishlist.has(product.id);
+                  return (
+                    <motion.div
+                      key={product.id}
+                      whileHover={{ y: -8, scale: 1.02 }}
+                      transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                      className="group relative rounded-2xl overflow-hidden cursor-pointer flex flex-col"
+                      style={
+                        darkMode
+                          ? {
+                              background: "linear-gradient(160deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))",
+                              border: "1px solid rgba(255,255,255,0.07)",
+                              backdropFilter: "blur(12px)",
+                            }
+                          : {
+                              background: "white",
+                              border: "1px solid rgba(0,0,0,0.07)",
+                              boxShadow: "0 4px 20px rgba(0,0,0,0.06)",
+                            }
+                      }
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.border = "1px solid rgba(139,92,246,0.5)";
+                        e.currentTarget.style.boxShadow = "0 8px 40px rgba(139,92,246,0.2), 0 0 0 1px rgba(139,92,246,0.1)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.border = darkMode ? "1px solid rgba(255,255,255,0.07)" : "1px solid rgba(0,0,0,0.07)";
+                        e.currentTarget.style.boxShadow = darkMode ? "none" : "0 4px 20px rgba(0,0,0,0.06)";
+                      }}
                     >
-                      <img
-                        src={product.image}
-                        alt={product.name}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 opacity-90"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                      {product.stock < 1 && (
-                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                          <span className="text-red-400 font-black text-sm uppercase tracking-widest">
-                            OUT
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="space-y-3">
-                      <span
-                        className="text-[10px] font-black uppercase tracking-widest"
-                        style={{ color: "#22d3ee" }}
+                      {/* Image area */}
+                      <div
+                        className={`relative overflow-hidden ${darkMode ? "bg-zinc-900" : "bg-zinc-100"}`}
+                        style={{ aspectRatio: "3/4" }}
                       >
-                        {product.category}
-                      </span>
-                      <div className="flex justify-between items-start gap-2">
-                        <h4
-                          className={`font-black text-base ${
-                            darkMode ? "text-white" : "text-zinc-900"
-                          } leading-snug`}
+                        <img
+                          src={product.image}
+                          alt={product.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                        />
+                        {/* gradient overlay */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+
+                        {/* HOT badge */}
+                        {isHot && product.stock > 0 && (
+                          <div
+                            className="absolute top-2.5 left-2.5 flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black text-white"
+                            style={{ background: "linear-gradient(135deg, #f97316, #ef4444)", boxShadow: "0 2px 8px rgba(239,68,68,0.4)" }}
+                          >
+                            <Flame className="w-3 h-3" /> HOT
+                          </div>
+                        )}
+
+                        {/* Color dot */}
+                        <div
+                          className="absolute top-2.5 right-9 w-3.5 h-3.5 rounded-full border border-white/60 shadow"
+                          style={{ backgroundColor: assignedColor.hex }}
+                          title={language === "vi" ? assignedColor.labelVi : assignedColor.labelEn}
+                        />
+
+                        {/* Wishlist button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setWishlist((prev) => {
+                              const next = new Set(prev);
+                              next.has(product.id) ? next.delete(product.id) : next.add(product.id);
+                              return next;
+                            });
+                          }}
+                          className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center transition-all"
+                          style={
+                            isWishlisted
+                              ? { background: "rgba(239,68,68,0.9)", boxShadow: "0 2px 8px rgba(239,68,68,0.5)" }
+                              : { background: "rgba(0,0,0,0.35)", backdropFilter: "blur(4px)" }
+                          }
                         >
+                          <Heart className="w-3 h-3" fill={isWishlisted ? "white" : "none"} stroke="white" strokeWidth={2.5} />
+                        </button>
+
+                        {/* Out of stock overlay */}
+                        {product.stock < 1 && (
+                          <div className="absolute inset-0 bg-black/65 flex items-center justify-center">
+                            <span className="text-red-400 font-black text-xs uppercase tracking-widest border border-red-400/40 px-2 py-0.5 rounded-lg">
+                              {language === "vi" ? "Hết hàng" : "Out of stock"}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Add to cart — slides up on hover */}
+                        <div className="absolute bottom-0 left-0 right-0 p-2.5 translate-y-full group-hover:translate-y-0 transition-transform duration-300">
+                          <button
+                            onClick={() => addToCart(product)}
+                            disabled={product.stock < 1}
+                            className="w-full py-2 rounded-xl font-black flex items-center justify-center gap-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed text-black"
+                            style={{ background: "linear-gradient(135deg, #22d3ee, #a855f7)" }}
+                          >
+                            <ShoppingCart className="w-3.5 h-3.5" />
+                            {language === "vi" ? "Thêm vào giỏ" : "Add to cart"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Info */}
+                      <div className="p-3 flex flex-col gap-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: "#22d3ee" }}>
+                            {product.category}
+                          </span>
+                          <div className="flex items-center gap-0.5">
+                            {[1, 2, 3, 4, 5].map((s) => (
+                              <Star key={s} className="w-2.5 h-2.5" fill={s <= 4 ? "#eab308" : "none"} stroke="#eab308" strokeWidth={2} />
+                            ))}
+                          </div>
+                        </div>
+                        <h4 className={`font-bold text-sm leading-tight line-clamp-2 ${darkMode ? "text-white" : "text-zinc-900"}`}>
                           {product.name}
                         </h4>
-                        <p
-                          className="text-base font-black whitespace-nowrap"
-                          style={{
-                            backgroundImage:
-                              "linear-gradient(135deg, #22d3ee, #a855f7)",
-                            WebkitBackgroundClip: "text",
-                            WebkitTextFillColor: "transparent",
-                          }}
-                        >
-                          {fmtVND(product.price)}
-                        </p>
+                        <div className="flex items-center justify-between mt-0.5">
+                          <p
+                            className="text-sm font-black"
+                            style={{ backgroundImage: "linear-gradient(135deg, #22d3ee, #a855f7)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}
+                          >
+                            {fmtVND(product.price)}
+                          </p>
+                          <span className={`text-[10px] font-medium ${product.stock > 0 ? "text-emerald-400" : "text-red-400"}`}>
+                            {product.stock > 0 ? `${product.stock} còn` : "Hết"}
+                          </span>
+                        </div>
                       </div>
-                      <button
-                        onClick={() => addToCart(product)}
-                        disabled={product.stock < 1}
-                        className="w-full py-3.5 rounded-xl font-black flex items-center justify-center gap-2 text-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed text-black"
-                        style={
-                          product.stock >= 1
-                            ? {
-                                background:
-                                  "linear-gradient(135deg, #22d3ee, #a855f7)",
-                              }
-                            : {
-                                background: "rgba(255,255,255,0.05)",
-                                color: "#71717a",
-                              }
-                        }
-                      >
-                        <ShoppingCart className="w-4 h-4" />
-                        {product.stock < 1
-                          ? t("store.outOfStock")
-                          : t("store.addToCart")}
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
+                    </motion.div>
+                  );
+                })}
               </div>
             )}
           </div>
