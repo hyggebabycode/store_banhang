@@ -131,6 +131,30 @@ const getEstimatedDelivery = (createdAt: string): string => {
   return d.toLocaleDateString("vi-VN");
 };
 
+const PRICE_RANGES = [
+  { labelVi: "100k – 500k", labelEn: "100k – 500k", min: 100000, max: 500000 },
+  {
+    labelVi: "500k – 1 triệu",
+    labelEn: "500k – 1M",
+    min: 500000,
+    max: 1000000,
+  },
+  { labelVi: "1tr – 5 triệu", labelEn: "1M – 5M", min: 1000000, max: 5000000 },
+  { labelVi: "Trên 5 triệu", labelEn: "Over 5M", min: 5000000, max: Infinity },
+];
+
+const PRODUCT_COLORS = [
+  { labelVi: "Đen", labelEn: "Black", value: "black", hex: "#18181b" },
+  { labelVi: "Trắng", labelEn: "White", value: "white", hex: "#e4e4e7" },
+  { labelVi: "Đỏ", labelEn: "Red", value: "red", hex: "#ef4444" },
+  { labelVi: "Xanh dương", labelEn: "Blue", value: "blue", hex: "#3b82f6" },
+  { labelVi: "Xanh lá", labelEn: "Green", value: "green", hex: "#22c55e" },
+  { labelVi: "Vàng", labelEn: "Yellow", value: "yellow", hex: "#eab308" },
+  { labelVi: "Hồng", labelEn: "Pink", value: "pink", hex: "#ec4899" },
+  { labelVi: "Tím", labelEn: "Purple", value: "purple", hex: "#a855f7" },
+  { labelVi: "Cam", labelEn: "Orange", value: "orange", hex: "#f97316" },
+];
+
 export default function App() {
   const { t, language } = useLanguage();
   const [view, setView] = useState<
@@ -138,8 +162,8 @@ export default function App() {
   >("shop");
   const [darkMode, setDarkMode] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [priceMin, setPriceMin] = useState("");
-  const [priceMax, setPriceMax] = useState("");
+  const [priceRangeIdx, setPriceRangeIdx] = useState(-1); // -1 = tất cả
+  const [colorFilter, setColorFilter] = useState(""); // "" = tất cả
   const [productsCatFilter, setProductsCatFilter] = useState("All");
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<Product[]>([]);
@@ -484,10 +508,12 @@ export default function App() {
     const matchName = p.name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchCat =
       productsCatFilter === "All" || p.category === productsCatFilter;
-    const min = priceMin !== "" ? Number(priceMin) : 0;
-    const max = priceMax !== "" ? Number(priceMax) : Infinity;
-    const matchPrice = p.price >= min && p.price <= max;
-    return matchName && matchCat && matchPrice;
+    const range = PRICE_RANGES[priceRangeIdx];
+    const matchPrice =
+      priceRangeIdx === -1 || (p.price >= range.min && p.price < range.max);
+    const assignedColor = PRODUCT_COLORS[p.id % PRODUCT_COLORS.length].value;
+    const matchColor = colorFilter === "" || assignedColor === colorFilter;
+    return matchName && matchCat && matchPrice && matchColor;
   });
   const userOrders = currentUser
     ? orders.filter((o) => o.customer_email === currentUser.email)
@@ -1002,101 +1028,178 @@ export default function App() {
               </p>
             </div>
 
-            {/* ── Filter bar ── */}
+            {/* ── Filter panel ── */}
             <div
-              className={`rounded-[28px] p-6 flex flex-col md:flex-row flex-wrap gap-4 ${
+              className={`rounded-[32px] p-8 flex flex-col gap-8 ${
                 darkMode
                   ? "bg-zinc-800/50 border border-white/8"
                   : "bg-white border border-zinc-200 shadow-sm"
               }`}
             >
-              {/* Search by name */}
-              <div className="flex-1 min-w-[200px] relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                <input
-                  type="text"
-                  placeholder={
-                    language === "vi"
-                      ? "Tìm kiếm sản phẩm..."
-                      : "Search products..."
-                  }
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className={`w-full pl-11 pr-4 py-3 rounded-xl font-medium text-sm outline-none transition-colors ${
-                    darkMode
-                      ? "bg-white/5 border border-white/10 text-white placeholder-zinc-500 focus:border-cyan-500/50"
-                      : "bg-zinc-100 border border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-cyan-400"
-                  }`}
-                />
-              </div>
-
-              {/* Price range */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <span
-                  className={`text-sm font-bold whitespace-nowrap ${
-                    darkMode ? "text-zinc-400" : "text-zinc-500"
-                  }`}
-                >
-                  {language === "vi" ? "Giá từ" : "Price"}
-                </span>
-                <input
-                  type="number"
-                  placeholder="0"
-                  value={priceMin}
-                  onChange={(e) => setPriceMin(e.target.value)}
-                  className={`w-28 px-3 py-3 rounded-xl font-medium text-sm outline-none transition-colors ${
-                    darkMode
-                      ? "bg-white/5 border border-white/10 text-white placeholder-zinc-500 focus:border-cyan-500/50"
-                      : "bg-zinc-100 border border-zinc-200 text-zinc-900 focus:border-cyan-400"
-                  }`}
-                />
-                <span
-                  className={`text-sm font-bold ${
-                    darkMode ? "text-zinc-400" : "text-zinc-500"
-                  }`}
-                >
-                  —
-                </span>
-                <input
-                  type="number"
-                  placeholder="∞"
-                  value={priceMax}
-                  onChange={(e) => setPriceMax(e.target.value)}
-                  className={`w-28 px-3 py-3 rounded-xl font-medium text-sm outline-none transition-colors ${
-                    darkMode
-                      ? "bg-white/5 border border-white/10 text-white placeholder-zinc-500 focus:border-cyan-500/50"
-                      : "bg-zinc-100 border border-zinc-200 text-zinc-900 focus:border-cyan-400"
-                  }`}
-                />
-                <span
-                  className={`text-xs font-bold ${
+              {/* Row 1: Search by name */}
+              <div>
+                <p
+                  className={`text-xs font-black uppercase tracking-widest mb-3 ${
                     darkMode ? "text-zinc-500" : "text-zinc-400"
                   }`}
                 >
-                  đ
-                </span>
+                  {language === "vi" ? "🔍 Tìm kiếm" : "🔍 Search"}
+                </p>
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-400" />
+                  <input
+                    type="text"
+                    placeholder={
+                      language === "vi"
+                        ? "Tìm theo tên sản phẩm..."
+                        : "Search by product name..."
+                    }
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className={`w-full pl-12 pr-4 py-4 rounded-2xl font-medium text-sm outline-none transition-all ${
+                      darkMode
+                        ? "bg-white/5 border border-white/10 text-white placeholder-zinc-500 focus:border-cyan-500/50 focus:bg-white/8"
+                        : "bg-zinc-50 border border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-cyan-400 focus:bg-white"
+                    }`}
+                  />
+                </div>
               </div>
 
-              {/* Reset button */}
-              {(searchQuery ||
-                priceMin ||
-                priceMax ||
-                productsCatFilter !== "All") && (
-                <button
-                  onClick={() => {
-                    setSearchQuery("");
-                    setPriceMin("");
-                    setPriceMax("");
-                    setProductsCatFilter("All");
-                  }}
-                  className={`px-4 py-3 rounded-xl text-sm font-bold transition-all ${
-                    darkMode
-                      ? "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white"
-                      : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900"
+              {/* Row 2: Price ranges */}
+              <div>
+                <p
+                  className={`text-xs font-black uppercase tracking-widest mb-4 ${
+                    darkMode ? "text-zinc-500" : "text-zinc-400"
                   }`}
                 >
-                  {language === "vi" ? "Xoá bộ lọc" : "Reset"}
-                </button>
+                  {language === "vi" ? "💰 Khoảng giá" : "💰 Price range"}
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={() => setPriceRangeIdx(-1)}
+                    className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all border ${
+                      priceRangeIdx === -1
+                        ? "text-black border-transparent"
+                        : darkMode
+                          ? "border-white/10 text-zinc-400 hover:text-white hover:border-white/20 bg-white/5"
+                          : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
+                    }`}
+                    style={
+                      priceRangeIdx === -1
+                        ? {
+                            background:
+                              "linear-gradient(135deg, #22d3ee, #a855f7)",
+                          }
+                        : {}
+                    }
+                  >
+                    {language === "vi" ? "Tất cả" : "All prices"}
+                  </button>
+                  {PRICE_RANGES.map((r, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setPriceRangeIdx(i)}
+                      className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all border ${
+                        priceRangeIdx === i
+                          ? "text-black border-transparent"
+                          : darkMode
+                            ? "border-white/10 text-zinc-400 hover:text-white hover:border-white/20 bg-white/5"
+                            : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
+                      }`}
+                      style={
+                        priceRangeIdx === i
+                          ? {
+                              background:
+                                "linear-gradient(135deg, #22d3ee, #a855f7)",
+                            }
+                          : {}
+                      }
+                    >
+                      {language === "vi" ? r.labelVi : r.labelEn}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Row 3: Color swatches */}
+              <div>
+                <p
+                  className={`text-xs font-black uppercase tracking-widest mb-4 ${
+                    darkMode ? "text-zinc-500" : "text-zinc-400"
+                  }`}
+                >
+                  {language === "vi" ? "🎨 Màu sắc" : "🎨 Color"}
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={() => setColorFilter("")}
+                    className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all border ${
+                      colorFilter === ""
+                        ? "text-black border-transparent"
+                        : darkMode
+                          ? "border-white/10 text-zinc-400 hover:text-white hover:border-white/20 bg-white/5"
+                          : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
+                    }`}
+                    style={
+                      colorFilter === ""
+                        ? {
+                            background:
+                              "linear-gradient(135deg, #22d3ee, #a855f7)",
+                          }
+                        : {}
+                    }
+                  >
+                    {language === "vi" ? "Tất cả" : "All"}
+                  </button>
+                  {PRODUCT_COLORS.map((c) => (
+                    <button
+                      key={c.value}
+                      onClick={() =>
+                        setColorFilter(colorFilter === c.value ? "" : c.value)
+                      }
+                      title={language === "vi" ? c.labelVi : c.labelEn}
+                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all border ${
+                        colorFilter === c.value
+                          ? darkMode
+                            ? "border-cyan-500/60 bg-cyan-500/10 text-cyan-300"
+                            : "border-cyan-400 bg-cyan-50 text-cyan-700"
+                          : darkMode
+                            ? "border-white/10 text-zinc-400 hover:text-white hover:border-white/20 bg-white/5"
+                            : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
+                      }`}
+                    >
+                      <span
+                        className="w-4 h-4 rounded-full border-2 border-white/20 flex-shrink-0"
+                        style={{ backgroundColor: c.hex }}
+                      />
+                      {language === "vi" ? c.labelVi : c.labelEn}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Reset */}
+              {(searchQuery ||
+                priceRangeIdx !== -1 ||
+                colorFilter !== "" ||
+                productsCatFilter !== "All") && (
+                <div className="pt-2 border-t border-white/5">
+                  <button
+                    onClick={() => {
+                      setSearchQuery("");
+                      setPriceRangeIdx(-1);
+                      setColorFilter("");
+                      setProductsCatFilter("All");
+                    }}
+                    className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                      darkMode
+                        ? "bg-white/5 text-zinc-400 hover:bg-red-500/10 hover:text-red-400 border border-white/10 hover:border-red-500/30"
+                        : "bg-zinc-100 text-zinc-500 hover:bg-red-50 hover:text-red-600 border border-zinc-200 hover:border-red-200"
+                    }`}
+                  >
+                    × {language === "vi" ? "Xoá bộ lọc" : "Clear filters"}
+                  </button>
+                </div>
               )}
             </div>
 
