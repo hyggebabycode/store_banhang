@@ -301,6 +301,7 @@ export default function App() {
   const [budgetCombos, setBudgetCombos] = useState<Product[]>([]);
   // AAA: Flappy cart
   const [flappyOpen, setFlappyOpen] = useState(false);
+  const [flappyStarted, setFlappyStarted] = useState(false);
   const [flappyOverlay, setFlappyOverlay] = useState<"none" | "over" | "won">(
     "none",
   );
@@ -518,16 +519,17 @@ export default function App() {
     }
   }, [currentUser?.email]);
 
-  // R: Crying cart when user leaves with items
+  // R: Crying cart — exit-intent (chuột rời khỏi viewport trình duyệt)
   useEffect(() => {
-    const handler = () => {
-      if (document.hidden && cart.length > 0) {
+    const handleLeave = (e: MouseEvent) => {
+      if (e.clientY <= 0 && cart.length > 0) {
         setCartCrying(true);
         setTimeout(() => setCartCrying(false), 3500);
       }
     };
-    document.addEventListener("visibilitychange", handler);
-    return () => document.removeEventListener("visibilitychange", handler);
+    document.documentElement.addEventListener("mouseleave", handleLeave);
+    return () =>
+      document.documentElement.removeEventListener("mouseleave", handleLeave);
   }, [cart.length]);
 
   // VV: Weather banner via Open-Meteo (no API key)
@@ -572,9 +574,81 @@ export default function App() {
     });
   }, []);
 
+  // AAA: Flappy Cart — Menu screen
+  useEffect(() => {
+    if (!flappyOpen || flappyStarted) return;
+    const canvas = flappyCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const W = canvas.width,
+      H = canvas.height;
+    ctx.fillStyle = "#0a2a1a";
+    ctx.fillRect(0, 0, W, H);
+    // Grid background
+    ctx.strokeStyle = "rgba(106,191,105,0.07)";
+    ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 40) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    for (let y = 0; y < H; y += 40) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+    // Glow circle
+    const grd = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, 160);
+    grd.addColorStop(0, "rgba(106,191,105,0.18)");
+    grd.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, W, H);
+    // Cart emoji
+    ctx.font = "52px serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("🛒", W / 2, H / 2 - 70);
+    // Title
+    ctx.font = "bold 30px monospace";
+    ctx.fillStyle = "#6abf69";
+    ctx.fillText("FLAPPY CART", W / 2, H / 2 - 10);
+    // Sub
+    ctx.font = "14px sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.fillText("Vượt 5 cột → nhận mã FLAPPY10", W / 2, H / 2 + 26);
+    // Start button
+    ctx.fillStyle = "rgba(106,191,105,0.25)";
+    ctx.beginPath();
+    ctx.roundRect(W / 2 - 100, H / 2 + 55, 200, 48, 14);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(106,191,105,0.6)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.font = "bold 17px sans-serif";
+    ctx.fillStyle = "white";
+    ctx.fillText("▶  Click để bắt đầu", W / 2, H / 2 + 79);
+    // Hint
+    ctx.font = "12px sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,0.3)";
+    ctx.fillText("Space / Click để bay", W / 2, H - 22);
+    const startHandler = () => setFlappyStarted(true);
+    canvas.addEventListener("click", startHandler);
+    document.addEventListener("keydown", function startKey(e) {
+      if (e.code === "Space") {
+        e.preventDefault();
+        setFlappyStarted(true);
+        document.removeEventListener("keydown", startKey);
+      }
+    });
+    return () => canvas.removeEventListener("click", startHandler);
+  }, [flappyOpen, flappyStarted]);
+
   // AAA: Flappy Cart game loop
   useEffect(() => {
-    if (!flappyOpen) return;
+    if (!flappyOpen || !flappyStarted) return;
     const canvas = flappyCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -5322,7 +5396,7 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 bg-black/85 backdrop-blur-md z-[200]"
-              onClick={() => setFlappyOpen(false)}
+              onClick={() => { setFlappyOpen(false); setFlappyStarted(false); }}
             />
             <div className="fixed inset-0 z-[201] flex items-center justify-center p-4 pointer-events-none">
               <motion.div
@@ -5342,16 +5416,21 @@ export default function App() {
                 <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
                   <div className="flex items-center gap-2">
                     <span className="text-2xl">🛒</span>
-                    <h2 className="font-black text-white text-xl">Flappy Cart</h2>
+                    <h2 className="font-black text-white text-xl">
+                      Flappy Cart
+                    </h2>
                     <span
                       className="text-xs font-bold px-2 py-0.5 rounded-full ml-2"
-                      style={{ background: "rgba(106,191,105,0.2)", color: "#6abf69" }}
+                      style={{
+                        background: "rgba(106,191,105,0.2)",
+                        color: "#6abf69",
+                      }}
                     >
                       Vượt 5 cột → nhận FLAPPY10
                     </span>
                   </div>
                   <button
-                    onClick={() => setFlappyOpen(false)}
+                    onClick={() => { setFlappyOpen(false); setFlappyStarted(false); }}
                     className="text-zinc-400 hover:text-white transition-colors ml-4"
                   >
                     <X className="w-5 h-5" />
@@ -5375,8 +5454,12 @@ export default function App() {
                         style={{ background: "rgba(0,0,0,0.72)" }}
                       >
                         <p className="text-5xl">😢</p>
-                        <p className="text-white font-black text-2xl">Thua rồi!</p>
-                        <p className="text-zinc-400 text-sm">Click / Space để chơi lại</p>
+                        <p className="text-white font-black text-2xl">
+                          Thua rồi!
+                        </p>
+                        <p className="text-zinc-400 text-sm">
+                          Click / Space để chơi lại
+                        </p>
                       </motion.div>
                     )}
                     {flappyOverlay === "won" && (
@@ -5388,19 +5471,33 @@ export default function App() {
                         style={{ background: "rgba(0,0,0,0.82)" }}
                       >
                         <p className="text-5xl">🎉</p>
-                        <p className="font-black text-2xl" style={{ color: "#6abf69" }}>Thắng rồi!</p>
+                        <p
+                          className="font-black text-2xl"
+                          style={{ color: "#6abf69" }}
+                        >
+                          Thắng rồi!
+                        </p>
                         <div
                           className="px-8 py-4 rounded-2xl text-center"
                           style={{
-                            background: "linear-gradient(135deg, rgba(106,191,105,0.2), rgba(232,168,56,0.2))",
+                            background:
+                              "linear-gradient(135deg, rgba(106,191,105,0.2), rgba(232,168,56,0.2))",
                             border: "1.5px solid rgba(232,168,56,0.5)",
                           }}
                         >
-                          <p className="text-zinc-400 text-xs font-bold uppercase tracking-widest mb-1">Mã giảm giá</p>
-                          <p className="font-black text-3xl text-white tracking-widest">FLAPPY10</p>
-                          <p className="text-zinc-500 text-xs mt-1">Giảm 10% đơn hàng tiếp theo</p>
+                          <p className="text-zinc-400 text-xs font-bold uppercase tracking-widest mb-1">
+                            Mã giảm giá
+                          </p>
+                          <p className="font-black text-3xl text-white tracking-widest">
+                            FLAPPY10
+                          </p>
+                          <p className="text-zinc-500 text-xs mt-1">
+                            Giảm 10% đơn hàng tiếp theo
+                          </p>
                         </div>
-                        <p className="text-zinc-500 text-xs">Click để chơi lại</p>
+                        <p className="text-zinc-500 text-xs">
+                          Click để chơi lại
+                        </p>
                       </motion.div>
                     )}
                   </AnimatePresence>
