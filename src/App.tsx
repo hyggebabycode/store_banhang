@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   ShoppingCart,
   User,
@@ -38,6 +38,9 @@ import {
   SlidersHorizontal,
   ChevronLeft,
   ChevronRight,
+  Tag,
+  ChevronDown,
+  Sparkles,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -156,7 +159,7 @@ const PRODUCT_COLORS = [
   { labelVi: "Xanh lá", labelEn: "Green", value: "green", hex: "#22c55e" },
   { labelVi: "Vàng", labelEn: "Yellow", value: "yellow", hex: "#eab308" },
   { labelVi: "Hồng", labelEn: "Pink", value: "pink", hex: "#ec4899" },
-  { labelVi: "Tím", labelEn: "Purple", value: "purple", hex: "#a855f7" },
+  { labelVi: "Tím", labelEn: "Purple", value: "purple", hex: "#e8a838" },
   { labelVi: "Cam", labelEn: "Orange", value: "orange", hex: "#f97316" },
 ];
 
@@ -254,6 +257,30 @@ export default function App() {
   ]);
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [heroIdx, setHeroIdx] = useState(0);
+
+  // Feature: Coupon
+  const [couponInput, setCouponInput] = useState("");
+  const [couponCode, setCouponCode] = useState("");
+  const [discount, setDiscount] = useState(0);
+  const [couponMsg, setCouponMsg] = useState<{
+    text: string;
+    ok: boolean;
+  } | null>(null);
+
+  // Feature: Sort
+  const [sortBy, setSortBy] = useState<
+    "default" | "price-asc" | "price-desc" | "name"
+  >("default");
+
+  // Feature: Search suggestions
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Wow effects
+  const [heroMouse, setHeroMouse] = useState({ x: 0.5, y: 0.5 });
+  const [flyParticles, setFlyParticles] = useState<
+    { id: number; x: number; y: number }[]
+  >([]);
+  const [cartBounce, setCartBounce] = useState(false);
 
   // Product editing (admin)
   const [isEditProductOpen, setIsEditProductOpen] = useState(false);
@@ -442,7 +469,7 @@ export default function App() {
     }
   };
 
-  const addToCart = (product: Product) => {
+  const addToCart = (product: Product, e?: React.MouseEvent) => {
     if (!currentUser) {
       setIsLoginOpen(true);
       return;
@@ -452,6 +479,17 @@ export default function App() {
       return;
     }
     setCart([...cart, product]);
+    // Cart fly animation
+    if (e) {
+      const id = Date.now() + Math.random();
+      setFlyParticles((p) => [...p, { id, x: e.clientX, y: e.clientY }]);
+      setTimeout(
+        () => setFlyParticles((p) => p.filter((q) => q.id !== id)),
+        900,
+      );
+    }
+    setCartBounce(true);
+    setTimeout(() => setCartBounce(false), 400);
     logger.log("INFO", `Added to cart: ${product.name}`);
   };
 
@@ -599,6 +637,42 @@ export default function App() {
     : [];
   const cartTotal = cart.reduce((sum, item) => sum + item.price, 0);
 
+  // Coupon logic
+  const COUPONS: Record<string, number> = {
+    GHIBLI20: 0.2,
+    FIRST10: 0.1,
+    SAVE15: 0.15,
+  };
+  const finalTotal = Math.round(cartTotal * (1 - discount));
+  const applyCoupon = () => {
+    const code = couponInput.trim().toUpperCase();
+    if (COUPONS[code]) {
+      setDiscount(COUPONS[code]);
+      setCouponCode(code);
+      setCouponMsg({
+        text: `✓ Giảm ${COUPONS[code] * 100}% — Mã "${code}" đã áp dụng!`,
+        ok: true,
+      });
+    } else {
+      setCouponMsg({ text: "Mã không hợp lệ", ok: false });
+    }
+  };
+
+  // Sort logic
+  const sortedProducts = [...productsPageFiltered].sort((a, b) => {
+    if (sortBy === "price-asc") return a.price - b.price;
+    if (sortBy === "price-desc") return b.price - a.price;
+    if (sortBy === "name") return a.name.localeCompare(b.name);
+    return 0;
+  });
+
+  // Search suggestions
+  const searchSuggestions = searchQuery.trim()
+    ? products
+        .filter((p) => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+        .slice(0, 6)
+    : [];
+
   // Partner helpers
   const getPartnerListingIds = (email: string): number[] => {
     try {
@@ -683,8 +757,8 @@ export default function App() {
       className={`min-h-screen ${darkMode ? "bg-zinc-950 text-white" : "bg-slate-100 text-zinc-900"} font-sans`}
       style={{
         backgroundImage: darkMode
-          ? "radial-gradient(ellipse at 20% 50%, rgba(139,92,246,0.07) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(6,182,212,0.07) 0%, transparent 60%)"
-          : "radial-gradient(ellipse at 20% 50%, rgba(139,92,246,0.04) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(6,182,212,0.04) 0%, transparent 60%)",
+          ? "radial-gradient(ellipse at 20% 50%, rgba(139,92,246,0.07) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(106,191,105,0.07) 0%, transparent 60%)"
+          : "radial-gradient(ellipse at 20% 50%, rgba(139,92,246,0.04) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(106,191,105,0.04) 0%, transparent 60%)",
       }}
     >
       {/* ── NAVBAR ── */}
@@ -703,7 +777,7 @@ export default function App() {
             <span className={darkMode ? "text-white" : "text-zinc-900"}>
               OMNI
             </span>
-            <span className="bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-[#6abf69] to-[#e8a838] bg-clip-text text-transparent">
               SHOP
             </span>
           </h1>
@@ -734,7 +808,7 @@ export default function App() {
                 onClick={() => setView(item.id)}
                 className={`px-5 py-2.5 rounded-xl text-sm font-black uppercase tracking-widest transition-all ${
                   view === item.id
-                    ? "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-400 border border-cyan-500/30"
+                    ? "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-[#6abf69] border border-[#6abf69]/30"
                     : darkMode
                       ? "text-zinc-400 hover:text-white hover:bg-white/5"
                       : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/70"
@@ -744,12 +818,12 @@ export default function App() {
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-cyan-500/10 rounded-full border border-cyan-500/20">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-cyan-500/10 rounded-full border border-[#6abf69]/20">
             <div
-              className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"
-              style={{ boxShadow: "0 0 6px #22d3ee" }}
+              className="w-2 h-2 rounded-full bg-[#6abf69] animate-pulse"
+              style={{ boxShadow: "0 0 6px #6abf69" }}
             />
-            <span className="text-[10px] font-black text-cyan-400 uppercase tracking-tighter">
+            <span className="text-[10px] font-black text-[#6abf69] uppercase tracking-tighter">
               {t("nav.systemOnline")}
             </span>
           </div>
@@ -767,25 +841,27 @@ export default function App() {
               <Moon className="w-5 h-5 text-violet-600" />
             )}
           </button>
-          <button
+          <motion.button
             onClick={() => setIsCartOpen(true)}
+            animate={cartBounce ? { scale: [1, 1.35, 0.9, 1.1, 1] } : {}}
+            transition={{ duration: 0.4 }}
             className={`relative p-2.5 ${darkMode ? "bg-white/5 hover:bg-white/10 border-white/10" : "bg-zinc-100 hover:bg-zinc-200 border-zinc-300"} border rounded-xl transition-all`}
           >
             <ShoppingCart className="w-5 h-5" />
             {cart.length > 0 && (
               <span
-                className="absolute -top-1 -right-1 bg-cyan-500 text-black text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center"
-                style={{ boxShadow: "0 0 8px #22d3ee" }}
+                className="absolute -top-1 -right-1 bg-[#6abf69] text-black text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center"
+                style={{ boxShadow: "0 0 8px #6abf69" }}
               >
                 {cart.length}
               </span>
             )}
-          </button>
+          </motion.button>
           {currentUser ? (
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setView("profile")}
-                className="flex items-center gap-2 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl hover:border-cyan-500/40 hover:bg-cyan-500/5 transition-all"
+                className="flex items-center gap-2 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl hover:border-[#6abf69]/40 hover:bg-cyan-500/5 transition-all"
               >
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-400 to-purple-600 flex items-center justify-center text-sm font-black text-white">
                   {currentUser.name.charAt(0)}
@@ -816,8 +892,8 @@ export default function App() {
               onClick={() => setIsLoginOpen(true)}
               className="flex items-center gap-2 px-5 py-2.5 font-black text-sm text-black rounded-xl transition-all"
               style={{
-                background: "linear-gradient(135deg, #22d3ee, #a855f7)",
-                boxShadow: "0 0 20px rgba(139,92,246,0.3)",
+                background: "linear-gradient(135deg, #6abf69, #e8a838)",
+                boxShadow: "0 0 20px rgba(106,191,105,0.3)",
               }}
             >
               <User className="w-4 h-4" />
@@ -835,10 +911,10 @@ export default function App() {
         <AnimatePresence mode="wait">
           <motion.div
             key={view}
-            initial={{ opacity: 0, y: 22 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -14 }}
-            transition={{ duration: 0.22, ease: "easeOut" }}
+            initial={{ opacity: 0, x: 50, scale: 0.97 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -50, scale: 0.97 }}
+            transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
           >
             {/* ════ SHOP ════ */}
             {view === "shop" && (
@@ -847,24 +923,38 @@ export default function App() {
                   className="relative h-[580px] rounded-[40px] overflow-hidden flex items-center px-16"
                   style={{
                     background:
-                      "linear-gradient(135deg, #09090b 0%, #0e0a1f 40%, #0a0f1e 100%)",
+                      "linear-gradient(160deg, #0a2a1a 0%, #132e20 40%, #0e2218 100%)",
+                  }}
+                  onMouseMove={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setHeroMouse({
+                      x: (e.clientX - rect.left) / rect.width,
+                      y: (e.clientY - rect.top) / rect.height,
+                    });
                   }}
                 >
+                  {/* Spotlight that follows mouse */}
+                  <div
+                    className="absolute inset-0 pointer-events-none transition-opacity duration-300"
+                    style={{
+                      background: `radial-gradient(circle 320px at ${heroMouse.x * 100}% ${heroMouse.y * 100}%, rgba(106,191,105,0.18) 0%, transparent 70%)`,
+                    }}
+                  />
                   {/* Grid bg */}
                   <div
                     className="absolute inset-0"
                     style={{
                       backgroundImage:
-                        "linear-gradient(rgba(139,92,246,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(139,92,246,0.06) 1px, transparent 1px)",
+                        "linear-gradient(rgba(106,191,105,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(106,191,105,0.06) 1px, transparent 1px)",
                       backgroundSize: "60px 60px",
                     }}
                   />
-                  {/* Neon orbs */}
+                  {/* Ghibli soft light orbs */}
                   <div
                     className="absolute top-10 right-20 w-96 h-96 rounded-full"
                     style={{
                       background:
-                        "radial-gradient(circle, rgba(139,92,246,0.2) 0%, transparent 70%)",
+                        "radial-gradient(circle, rgba(106,191,105,0.18) 0%, transparent 70%)",
                       filter: "blur(40px)",
                     }}
                   />
@@ -872,14 +962,49 @@ export default function App() {
                     className="absolute bottom-0 right-1/3 w-72 h-72 rounded-full"
                     style={{
                       background:
-                        "radial-gradient(circle, rgba(6,182,212,0.15) 0%, transparent 70%)",
+                        "radial-gradient(circle, rgba(232,168,56,0.13) 0%, transparent 70%)",
                       filter: "blur(40px)",
                     }}
                   />
+                  {/* Floating Ghibli leaves / dandelion seeds */}
+                  {[
+                    { top: "15%", left: "10%", delay: 0, size: 8 },
+                    { top: "40%", left: "5%", delay: 1.2, size: 6 },
+                    { top: "70%", left: "15%", delay: 0.6, size: 10 },
+                    { top: "25%", left: "40%", delay: 1.8, size: 7 },
+                    { top: "80%", left: "50%", delay: 0.3, size: 5 },
+                  ].map((leaf, i) => (
+                    <motion.div
+                      key={i}
+                      className="absolute rounded-full pointer-events-none"
+                      style={{
+                        top: leaf.top,
+                        left: leaf.left,
+                        width: leaf.size,
+                        height: leaf.size,
+                        background:
+                          i % 2 === 0
+                            ? "rgba(106,191,105,0.6)"
+                            : "rgba(232,168,56,0.5)",
+                        boxShadow: `0 0 ${leaf.size * 2}px ${i % 2 === 0 ? "rgba(106,191,105,0.5)" : "rgba(232,168,56,0.4)"}`,
+                      }}
+                      animate={{
+                        y: [0, -18, 0],
+                        x: [0, 8, 0],
+                        opacity: [0.5, 1, 0.5],
+                      }}
+                      transition={{
+                        duration: 3 + i * 0.7,
+                        repeat: Infinity,
+                        delay: leaf.delay,
+                        ease: "easeInOut",
+                      }}
+                    />
+                  ))}
                   {/* Geometric shapes */}
-                  <div className="absolute top-16 right-16 w-48 h-48 border border-purple-500/20 rounded-3xl rotate-12" />
-                  <div className="absolute top-24 right-24 w-32 h-32 border border-cyan-500/20 rounded-2xl -rotate-6" />
-                  <div className="absolute bottom-16 right-48 w-20 h-20 bg-cyan-500/5 border border-cyan-500/20 rounded-xl rotate-45" />
+                  <div className="absolute top-16 right-16 w-48 h-48 border border-[#6abf69]/20 rounded-3xl rotate-12" />
+                  <div className="absolute top-24 right-24 w-32 h-32 border border-[#e8a838]/20 rounded-2xl -rotate-6" />
+                  <div className="absolute bottom-16 right-48 w-20 h-20 bg-[#6abf69]/5 border border-[#6abf69]/20 rounded-xl rotate-45" />
                   {/* Hero product carousel */}
                   <div className="absolute right-4 top-1/2 -translate-y-1/2 hidden xl:flex items-center gap-3">
                     {/* Arrow Left */}
@@ -894,9 +1019,9 @@ export default function App() {
                         }
                         className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200 hover:scale-110"
                         style={{
-                          background: "rgba(6,182,212,0.15)",
-                          border: "1px solid rgba(6,182,212,0.4)",
-                          color: "#22d3ee",
+                          background: "rgba(106,191,105,0.15)",
+                          border: "1px solid rgba(106,191,105,0.4)",
+                          color: "#6abf69",
                           backdropFilter: "blur(8px)",
                         }}
                       >
@@ -909,7 +1034,7 @@ export default function App() {
                         className="absolute inset-0 rounded-3xl"
                         style={{
                           background:
-                            "linear-gradient(135deg, rgba(139,92,246,0.3), rgba(6,182,212,0.3))",
+                            "linear-gradient(135deg, rgba(106,191,105,0.3), rgba(232,168,56,0.3))",
                           filter: "blur(30px)",
                         }}
                       />
@@ -941,7 +1066,7 @@ export default function App() {
                               onClick={() => setHeroIdx(i)}
                               className={`rounded-full transition-all duration-300 ${
                                 i === heroIdx
-                                  ? "w-5 h-1.5 bg-cyan-400"
+                                  ? "w-5 h-1.5 bg-[#6abf69]"
                                   : "w-1.5 h-1.5 bg-white/30 hover:bg-white/60"
                               }`}
                             />
@@ -959,9 +1084,9 @@ export default function App() {
                         }
                         className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200 hover:scale-110"
                         style={{
-                          background: "rgba(6,182,212,0.15)",
-                          border: "1px solid rgba(6,182,212,0.4)",
-                          color: "#22d3ee",
+                          background: "rgba(106,191,105,0.15)",
+                          border: "1px solid rgba(106,191,105,0.4)",
+                          color: "#6abf69",
                           backdropFilter: "blur(8px)",
                         }}
                       >
@@ -973,14 +1098,14 @@ export default function App() {
                     <div
                       className="inline-flex items-center gap-2 px-4 py-2 rounded-full font-mono text-xs font-black uppercase tracking-widest"
                       style={{
-                        background: "rgba(6,182,212,0.1)",
-                        border: "1px solid rgba(6,182,212,0.3)",
-                        color: "#22d3ee",
+                        background: "rgba(106,191,105,0.1)",
+                        border: "1px solid rgba(232,168,56,0.3)",
+                        color: "#6abf69",
                       }}
                     >
                       <div
-                        className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"
-                        style={{ boxShadow: "0 0 6px #22d3ee" }}
+                        className="w-1.5 h-1.5 rounded-full bg-[#6abf69] animate-pulse"
+                        style={{ boxShadow: "0 0 6px #6abf69" }}
                       />
                       <Clock className="w-3 h-3" /> {t("store.hero.badge")}
                     </div>
@@ -994,7 +1119,7 @@ export default function App() {
                       <span
                         style={{
                           backgroundImage:
-                            "linear-gradient(135deg, #22d3ee, #a855f7)",
+                            "linear-gradient(135deg, #6abf69, #e8a838)",
                           WebkitBackgroundClip: "text",
                           WebkitTextFillColor: "transparent",
                         }}
@@ -1003,8 +1128,8 @@ export default function App() {
                       </span>
                       <span
                         style={{
-                          color: "#22d3ee",
-                          textShadow: "0 0 20px #22d3ee",
+                          color: "#6abf69",
+                          textShadow: "0 0 20px #6abf69",
                         }}
                       >
                         _
@@ -1023,7 +1148,7 @@ export default function App() {
                         className="px-8 py-4 font-black text-lg text-black rounded-2xl transition-all hover:scale-105"
                         style={{
                           background:
-                            "linear-gradient(135deg, #22d3ee, #a855f7)",
+                            "linear-gradient(135deg, #6abf69, #e8a838)",
                           boxShadow: "0 0 30px rgba(139,92,246,0.4)",
                         }}
                       >
@@ -1049,7 +1174,7 @@ export default function App() {
                         <span
                           style={{
                             backgroundImage:
-                              "linear-gradient(135deg, #22d3ee, #a855f7)",
+                              "linear-gradient(135deg, #6abf69, #e8a838)",
                             WebkitBackgroundClip: "text",
                             WebkitTextFillColor: "transparent",
                           }}
@@ -1075,7 +1200,7 @@ export default function App() {
                             categoryFilter === cat
                               ? {
                                   background:
-                                    "linear-gradient(135deg, #22d3ee, #a855f7)",
+                                    "linear-gradient(135deg, #6abf69, #e8a838)",
                                 }
                               : {}
                           }
@@ -1143,7 +1268,7 @@ export default function App() {
                           <div className="space-y-3">
                             <span
                               className="text-[10px] font-black uppercase tracking-widest"
-                              style={{ color: "#22d3ee" }}
+                              style={{ color: "#6abf69" }}
                             >
                               {product.category}
                             </span>
@@ -1157,7 +1282,7 @@ export default function App() {
                                 className="text-base font-black whitespace-nowrap"
                                 style={{
                                   backgroundImage:
-                                    "linear-gradient(135deg, #22d3ee, #a855f7)",
+                                    "linear-gradient(135deg, #6abf69, #e8a838)",
                                   WebkitBackgroundClip: "text",
                                   WebkitTextFillColor: "transparent",
                                 }}
@@ -1176,7 +1301,7 @@ export default function App() {
                                 product.stock >= 1
                                   ? {
                                       background:
-                                        "linear-gradient(135deg, #22d3ee, #a855f7)",
+                                        "linear-gradient(135deg, #6abf69, #e8a838)",
                                     }
                                   : {
                                       background: "rgba(255,255,255,0.05)",
@@ -1221,7 +1346,7 @@ export default function App() {
                     </span>
                     <span
                       className="text-sm font-bold"
-                      style={{ color: "#22d3ee" }}
+                      style={{ color: "#6abf69" }}
                     >
                       {language === "vi" ? "Sản phẩm" : "Products"}
                     </span>
@@ -1273,13 +1398,51 @@ export default function App() {
                             : "Search products..."
                         }
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={(e) => {
+                          setSearchQuery(e.target.value);
+                          setShowSuggestions(true);
+                        }}
+                        onFocus={() => setShowSuggestions(true)}
+                        onBlur={() =>
+                          setTimeout(() => setShowSuggestions(false), 150)
+                        }
                         className={`w-full pl-9 pr-3 py-2.5 rounded-xl text-sm font-medium outline-none transition-all ${
                           darkMode
-                            ? "bg-white/5 border border-white/10 text-white placeholder-zinc-500 focus:border-cyan-500/50"
-                            : "bg-zinc-50 border border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-cyan-400"
+                            ? "bg-white/5 border border-white/10 text-white placeholder-zinc-500 focus:border-[#6abf69]/50"
+                            : "bg-zinc-50 border border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-[#6abf69]"
                         }`}
                       />
+                      {/* Search suggestions dropdown */}
+                      {showSuggestions && searchSuggestions.length > 0 && (
+                        <div
+                          className={`absolute top-full left-0 right-0 mt-1 rounded-2xl overflow-hidden shadow-2xl z-50 border ${
+                            darkMode
+                              ? "bg-zinc-800 border-white/10"
+                              : "bg-white border-zinc-200"
+                          }`}
+                        >
+                          {searchSuggestions.map((p) => (
+                            <button
+                              key={p.id}
+                              onMouseDown={() => {
+                                setSearchQuery(p.name);
+                                setShowSuggestions(false);
+                              }}
+                              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-all ${
+                                darkMode
+                                  ? "hover:bg-white/5 text-zinc-200"
+                                  : "hover:bg-zinc-50 text-zinc-800"
+                              }`}
+                            >
+                              <Search className="w-3.5 h-3.5 flex-shrink-0 text-zinc-400" />
+                              <span className="font-medium">{p.name}</span>
+                              <span className="ml-auto text-xs text-zinc-500 font-bold">
+                                {p.category}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <button
                       onClick={() => setShowFilters(!showFilters)}
@@ -1294,7 +1457,7 @@ export default function App() {
                         showFilters
                           ? {
                               background:
-                                "linear-gradient(135deg, #22d3ee, #a855f7)",
+                                "linear-gradient(135deg, #6abf69, #e8a838)",
                             }
                           : {}
                       }
@@ -1302,7 +1465,7 @@ export default function App() {
                       <SlidersHorizontal className="w-4 h-4" />
                       {language === "vi" ? "Bộ lọc" : "Filters"}
                       {(priceRangeIdx !== -1 || colorFilter !== "") && (
-                        <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                        <span className="w-2 h-2 rounded-full bg-[#6abf69]" />
                       )}
                     </button>
                   </div>
@@ -1327,7 +1490,7 @@ export default function App() {
                           productsCatFilter === cat
                             ? {
                                 background:
-                                  "linear-gradient(135deg, #22d3ee, #a855f7)",
+                                  "linear-gradient(135deg, #6abf69, #e8a838)",
                               }
                             : {}
                         }
@@ -1386,7 +1549,7 @@ export default function App() {
                                   priceRangeIdx === idx
                                     ? {
                                         background:
-                                          "linear-gradient(135deg, #22d3ee, #a855f7)",
+                                          "linear-gradient(135deg, #6abf69, #e8a838)",
                                       }
                                     : {}
                                 }
@@ -1415,7 +1578,7 @@ export default function App() {
                                 colorFilter === ""
                                   ? {
                                       background:
-                                        "linear-gradient(135deg, #22d3ee, #a855f7)",
+                                        "linear-gradient(135deg, #6abf69, #e8a838)",
                                     }
                                   : {}
                               }
@@ -1436,8 +1599,8 @@ export default function App() {
                                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
                                   colorFilter === c.value
                                     ? darkMode
-                                      ? "border-cyan-500/60 bg-cyan-500/10 text-cyan-300"
-                                      : "border-cyan-400 bg-cyan-50 text-cyan-700"
+                                      ? "border-[#6abf69]/60 bg-cyan-500/10 text-cyan-300"
+                                      : "border-[#6abf69] bg-cyan-50 text-cyan-700"
                                     : darkMode
                                       ? "border-white/10 text-zinc-400 hover:text-white bg-white/5"
                                       : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
@@ -1474,203 +1637,261 @@ export default function App() {
                     </p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
-                    {productsPageFiltered.map((product) => {
-                      const isHot = product.id % 5 < 2;
-                      const assignedColor =
-                        PRODUCT_COLORS[product.id % PRODUCT_COLORS.length];
-                      const isWishlisted = wishlist.has(product.id);
-                      return (
-                        <motion.div
-                          key={product.id}
-                          whileHover={{ y: -8, scale: 1.02 }}
-                          transition={{
-                            type: "spring",
-                            stiffness: 300,
-                            damping: 20,
-                          }}
-                          className="group relative rounded-2xl overflow-hidden cursor-pointer flex flex-col"
-                          style={
-                            darkMode
-                              ? {
-                                  background:
-                                    "linear-gradient(160deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))",
-                                  border: "1px solid rgba(255,255,255,0.07)",
-                                  backdropFilter: "blur(12px)",
-                                }
-                              : {
-                                  background: "white",
-                                  border: "1px solid rgba(0,0,0,0.07)",
-                                  boxShadow: "0 4px 20px rgba(0,0,0,0.06)",
-                                }
+                  <div className="flex flex-col gap-4">
+                    {/* Sort bar */}
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`text-sm font-bold ${darkMode ? "text-zinc-400" : "text-zinc-500"}`}
+                      >
+                        {sortedProducts.length}{" "}
+                        {language === "vi" ? "sản phẩm" : "products"}
+                      </span>
+                      <div className="relative">
+                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none text-zinc-400" />
+                        <select
+                          value={sortBy}
+                          onChange={(e) =>
+                            setSortBy(e.target.value as typeof sortBy)
                           }
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.border =
-                              "1px solid rgba(139,92,246,0.5)";
-                            e.currentTarget.style.boxShadow =
-                              "0 8px 40px rgba(139,92,246,0.2), 0 0 0 1px rgba(139,92,246,0.1)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.border = darkMode
-                              ? "1px solid rgba(255,255,255,0.07)"
-                              : "1px solid rgba(0,0,0,0.07)";
-                            e.currentTarget.style.boxShadow = darkMode
-                              ? "none"
-                              : "0 4px 20px rgba(0,0,0,0.06)";
-                          }}
+                          className={`appearance-none pl-4 pr-9 py-2 rounded-xl text-sm font-bold outline-none border transition-all cursor-pointer ${
+                            darkMode
+                              ? "bg-zinc-800 border-white/10 text-white"
+                              : "bg-white border-zinc-200 text-zinc-900"
+                          }`}
+                          style={darkMode ? { colorScheme: "dark" } : {}}
                         >
-                          {/* Image area */}
-                          <div
-                            className={`relative overflow-hidden ${darkMode ? "bg-zinc-900" : "bg-zinc-100"}`}
-                            style={{ aspectRatio: "3/4" }}
+                          <option
+                            value="default"
+                            className={darkMode ? "bg-zinc-800 text-white" : ""}
                           >
-                            <img
-                              src={getProductImage(product)}
-                              alt={product.name}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                            />
-                            {/* gradient overlay */}
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-
-                            {/* HOT badge */}
-                            {isHot && product.stock > 0 && (
-                              <div
-                                className="absolute top-2.5 left-2.5 flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black text-white"
-                                style={{
-                                  background:
-                                    "linear-gradient(135deg, #f97316, #ef4444)",
-                                  boxShadow: "0 2px 8px rgba(239,68,68,0.4)",
-                                }}
-                              >
-                                <Flame className="w-3 h-3" /> HOT
-                              </div>
-                            )}
-
-                            {/* Color dot */}
+                            {language === "vi" ? "Mặc định" : "Default"}
+                          </option>
+                          <option
+                            value="price-asc"
+                            className={darkMode ? "bg-zinc-800 text-white" : ""}
+                          >
+                            {language === "vi"
+                              ? "Giá thấp → cao"
+                              : "Price: Low → High"}
+                          </option>
+                          <option
+                            value="price-desc"
+                            className={darkMode ? "bg-zinc-800 text-white" : ""}
+                          >
+                            {language === "vi"
+                              ? "Giá cao → thấp"
+                              : "Price: High → Low"}
+                          </option>
+                          <option
+                            value="name"
+                            className={darkMode ? "bg-zinc-800 text-white" : ""}
+                          >
+                            {language === "vi" ? "Tên A-Z" : "Name A-Z"}
+                          </option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
+                      {sortedProducts.map((product) => {
+                        const isHot = product.id % 5 < 2;
+                        const assignedColor =
+                          PRODUCT_COLORS[product.id % PRODUCT_COLORS.length];
+                        const isWishlisted = wishlist.has(product.id);
+                        return (
+                          <motion.div
+                            key={product.id}
+                            whileHover={{ y: -8, scale: 1.02 }}
+                            transition={{
+                              type: "spring",
+                              stiffness: 300,
+                              damping: 20,
+                            }}
+                            className="group relative rounded-2xl overflow-hidden cursor-pointer flex flex-col"
+                            style={
+                              darkMode
+                                ? {
+                                    background:
+                                      "linear-gradient(160deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))",
+                                    border: "1px solid rgba(255,255,255,0.07)",
+                                    backdropFilter: "blur(12px)",
+                                  }
+                                : {
+                                    background: "white",
+                                    border: "1px solid rgba(0,0,0,0.07)",
+                                    boxShadow: "0 4px 20px rgba(0,0,0,0.06)",
+                                  }
+                            }
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.border =
+                                "1px solid rgba(139,92,246,0.5)";
+                              e.currentTarget.style.boxShadow =
+                                "0 8px 40px rgba(106,191,105,0.2), 0 0 0 1px rgba(139,92,246,0.1)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.border = darkMode
+                                ? "1px solid rgba(255,255,255,0.07)"
+                                : "1px solid rgba(0,0,0,0.07)";
+                              e.currentTarget.style.boxShadow = darkMode
+                                ? "none"
+                                : "0 4px 20px rgba(0,0,0,0.06)";
+                            }}
+                          >
+                            {/* Image area */}
                             <div
-                              className="absolute top-2.5 right-9 w-3.5 h-3.5 rounded-full border border-white/60 shadow"
-                              style={{ backgroundColor: assignedColor.hex }}
-                              title={
-                                language === "vi"
-                                  ? assignedColor.labelVi
-                                  : assignedColor.labelEn
-                              }
-                            />
-
-                            {/* Wishlist button */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setWishlist((prev) => {
-                                  const next = new Set(prev);
-                                  next.has(product.id)
-                                    ? next.delete(product.id)
-                                    : next.add(product.id);
-                                  return next;
-                                });
-                              }}
-                              className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center transition-all"
-                              style={
-                                isWishlisted
-                                  ? {
-                                      background: "rgba(239,68,68,0.9)",
-                                      boxShadow:
-                                        "0 2px 8px rgba(239,68,68,0.5)",
-                                    }
-                                  : {
-                                      background: "rgba(0,0,0,0.35)",
-                                      backdropFilter: "blur(4px)",
-                                    }
-                              }
+                              className={`relative overflow-hidden ${darkMode ? "bg-zinc-900" : "bg-zinc-100"}`}
+                              style={{ aspectRatio: "3/4" }}
                             >
-                              <Heart
-                                className="w-3 h-3"
-                                fill={isWishlisted ? "white" : "none"}
-                                stroke="white"
-                                strokeWidth={2.5}
+                              <img
+                                src={getProductImage(product)}
+                                alt={product.name}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                               />
-                            </button>
+                              {/* gradient overlay */}
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
 
-                            {/* Out of stock overlay */}
-                            {product.stock < 1 && (
-                              <div className="absolute inset-0 bg-black/65 flex items-center justify-center">
-                                <span className="text-red-400 font-black text-xs uppercase tracking-widest border border-red-400/40 px-2 py-0.5 rounded-lg">
+                              {/* HOT badge */}
+                              {isHot && product.stock > 0 && (
+                                <div
+                                  className="absolute top-2.5 left-2.5 flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black text-white"
+                                  style={{
+                                    background:
+                                      "linear-gradient(135deg, #f97316, #ef4444)",
+                                    boxShadow: "0 2px 8px rgba(239,68,68,0.4)",
+                                  }}
+                                >
+                                  <Flame className="w-3 h-3" /> HOT
+                                </div>
+                              )}
+
+                              {/* Color dot */}
+                              <div
+                                className="absolute top-2.5 right-9 w-3.5 h-3.5 rounded-full border border-white/60 shadow"
+                                style={{ backgroundColor: assignedColor.hex }}
+                                title={
+                                  language === "vi"
+                                    ? assignedColor.labelVi
+                                    : assignedColor.labelEn
+                                }
+                              />
+
+                              {/* Wishlist button */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setWishlist((prev) => {
+                                    const next = new Set(prev);
+                                    next.has(product.id)
+                                      ? next.delete(product.id)
+                                      : next.add(product.id);
+                                    return next;
+                                  });
+                                }}
+                                className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center transition-all"
+                                style={
+                                  isWishlisted
+                                    ? {
+                                        background: "rgba(239,68,68,0.9)",
+                                        boxShadow:
+                                          "0 2px 8px rgba(239,68,68,0.5)",
+                                      }
+                                    : {
+                                        background: "rgba(0,0,0,0.35)",
+                                        backdropFilter: "blur(4px)",
+                                      }
+                                }
+                              >
+                                <Heart
+                                  className="w-3 h-3"
+                                  fill={isWishlisted ? "white" : "none"}
+                                  stroke="white"
+                                  strokeWidth={2.5}
+                                />
+                              </button>
+
+                              {/* Out of stock overlay */}
+                              {product.stock < 1 && (
+                                <div className="absolute inset-0 bg-black/65 flex items-center justify-center">
+                                  <span className="text-red-400 font-black text-xs uppercase tracking-widest border border-red-400/40 px-2 py-0.5 rounded-lg">
+                                    {language === "vi"
+                                      ? "Hết hàng"
+                                      : "Out of stock"}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Add to cart — slides up on hover */}
+                              <div className="absolute bottom-0 left-0 right-0 p-2.5 translate-y-full group-hover:translate-y-0 transition-transform duration-300">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    addToCart(product, e);
+                                  }}
+                                  disabled={product.stock < 1}
+                                  className="w-full py-2 rounded-xl font-black flex items-center justify-center gap-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed text-black"
+                                  style={{
+                                    background:
+                                      "linear-gradient(135deg, #6abf69, #e8a838)",
+                                  }}
+                                >
+                                  <ShoppingCart className="w-3.5 h-3.5" />
                                   {language === "vi"
-                                    ? "Hết hàng"
-                                    : "Out of stock"}
+                                    ? "Thêm vào giỏ"
+                                    : "Add to cart"}
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Info */}
+                            <div className="p-3 flex flex-col gap-1.5">
+                              <div className="flex items-center justify-between">
+                                <span
+                                  className="text-[9px] font-black uppercase tracking-widest"
+                                  style={{ color: "#6abf69" }}
+                                >
+                                  {product.category}
+                                </span>
+                                <div className="flex items-center gap-0.5">
+                                  {[1, 2, 3, 4, 5].map((s) => (
+                                    <Star
+                                      key={s}
+                                      className="w-2.5 h-2.5"
+                                      fill={s <= 4 ? "#eab308" : "none"}
+                                      stroke="#eab308"
+                                      strokeWidth={2}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                              <h4
+                                className={`font-bold text-sm leading-tight line-clamp-2 ${darkMode ? "text-white" : "text-zinc-900"}`}
+                              >
+                                {product.name}
+                              </h4>
+                              <div className="flex items-center justify-between mt-0.5">
+                                <p
+                                  className="text-sm font-black"
+                                  style={{
+                                    backgroundImage:
+                                      "linear-gradient(135deg, #6abf69, #e8a838)",
+                                    WebkitBackgroundClip: "text",
+                                    WebkitTextFillColor: "transparent",
+                                  }}
+                                >
+                                  {fmtVND(product.price)}
+                                </p>
+                                <span
+                                  className={`text-[10px] font-medium ${product.stock > 0 ? "text-emerald-400" : "text-red-400"}`}
+                                >
+                                  {product.stock > 0
+                                    ? `${product.stock} còn`
+                                    : "Hết"}
                                 </span>
                               </div>
-                            )}
-
-                            {/* Add to cart — slides up on hover */}
-                            <div className="absolute bottom-0 left-0 right-0 p-2.5 translate-y-full group-hover:translate-y-0 transition-transform duration-300">
-                              <button
-                                onClick={() => addToCart(product)}
-                                disabled={product.stock < 1}
-                                className="w-full py-2 rounded-xl font-black flex items-center justify-center gap-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed text-black"
-                                style={{
-                                  background:
-                                    "linear-gradient(135deg, #22d3ee, #a855f7)",
-                                }}
-                              >
-                                <ShoppingCart className="w-3.5 h-3.5" />
-                                {language === "vi"
-                                  ? "Thêm vào giỏ"
-                                  : "Add to cart"}
-                              </button>
                             </div>
-                          </div>
-
-                          {/* Info */}
-                          <div className="p-3 flex flex-col gap-1.5">
-                            <div className="flex items-center justify-between">
-                              <span
-                                className="text-[9px] font-black uppercase tracking-widest"
-                                style={{ color: "#22d3ee" }}
-                              >
-                                {product.category}
-                              </span>
-                              <div className="flex items-center gap-0.5">
-                                {[1, 2, 3, 4, 5].map((s) => (
-                                  <Star
-                                    key={s}
-                                    className="w-2.5 h-2.5"
-                                    fill={s <= 4 ? "#eab308" : "none"}
-                                    stroke="#eab308"
-                                    strokeWidth={2}
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                            <h4
-                              className={`font-bold text-sm leading-tight line-clamp-2 ${darkMode ? "text-white" : "text-zinc-900"}`}
-                            >
-                              {product.name}
-                            </h4>
-                            <div className="flex items-center justify-between mt-0.5">
-                              <p
-                                className="text-sm font-black"
-                                style={{
-                                  backgroundImage:
-                                    "linear-gradient(135deg, #22d3ee, #a855f7)",
-                                  WebkitBackgroundClip: "text",
-                                  WebkitTextFillColor: "transparent",
-                                }}
-                              >
-                                {fmtVND(product.price)}
-                              </p>
-                              <span
-                                className={`text-[10px] font-medium ${product.stock > 0 ? "text-emerald-400" : "text-red-400"}`}
-                              >
-                                {product.stock > 0
-                                  ? `${product.stock} còn`
-                                  : "Hết"}
-                              </span>
-                            </div>
-                          </div>
-                        </motion.div>
-                      );
-                    })}
+                          </motion.div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1699,7 +1920,7 @@ export default function App() {
                   <div
                     className="relative w-20 h-20 rounded-full flex items-center justify-center text-4xl font-black flex-shrink-0"
                     style={{
-                      background: "linear-gradient(135deg, #fb923c, #a855f7)",
+                      background: "linear-gradient(135deg, #fb923c, #e8a838)",
                       boxShadow: "0 0 30px rgba(251,146,60,0.4)",
                     }}
                   >
@@ -1739,7 +1960,7 @@ export default function App() {
                     onClick={() => setIsPartnerAddOpen(true)}
                     className="relative flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-white text-sm flex-shrink-0 hover:opacity-90 transition-all"
                     style={{
-                      background: "linear-gradient(135deg, #fb923c, #a855f7)",
+                      background: "linear-gradient(135deg, #fb923c, #e8a838)",
                       boxShadow: "0 0 20px rgba(251,146,60,0.3)",
                     }}
                   >
@@ -1787,7 +2008,7 @@ export default function App() {
                         }
                       }).length,
                       icon: ShoppingCart,
-                      color: "text-purple-400",
+                      color: "text-[#e8a838]",
                       bg: darkMode ? "bg-purple-500/10" : "bg-purple-50",
                     },
                   ].map((s, i) => (
@@ -1872,7 +2093,7 @@ export default function App() {
                           className="px-6 py-3 rounded-2xl font-black text-white text-sm hover:opacity-90 transition-all"
                           style={{
                             background:
-                              "linear-gradient(135deg, #fb923c, #a855f7)",
+                              "linear-gradient(135deg, #fb923c, #e8a838)",
                           }}
                         >
                           <Plus className="w-4 h-4 inline mr-2" />
@@ -2032,7 +2253,7 @@ export default function App() {
                   className="rounded-[40px] p-10 flex items-center gap-8 relative overflow-hidden"
                   style={{
                     background:
-                      "linear-gradient(135deg, rgba(139,92,246,0.15), rgba(6,182,212,0.1))",
+                      "linear-gradient(135deg, rgba(139,92,246,0.15), rgba(106,191,105,0.1))",
                     border: "1px solid rgba(255,255,255,0.08)",
                   }}
                 >
@@ -2047,7 +2268,7 @@ export default function App() {
                   <div
                     className="relative w-20 h-20 rounded-full flex items-center justify-center text-4xl font-black"
                     style={{
-                      background: "linear-gradient(135deg, #22d3ee, #a855f7)",
+                      background: "linear-gradient(135deg, #6abf69, #e8a838)",
                       boxShadow: "0 0 30px rgba(139,92,246,0.4)",
                     }}
                   >
@@ -2064,7 +2285,7 @@ export default function App() {
                       {currentUser.email} ·{" "}
                       <span
                         className="font-bold uppercase"
-                        style={{ color: "#22d3ee" }}
+                        style={{ color: "#6abf69" }}
                       >
                         {currentUser.role}
                       </span>
@@ -2073,11 +2294,11 @@ export default function App() {
                 </div>
                 <div>
                   <h3 className="text-2xl font-black mb-6 flex items-center gap-3">
-                    <History className="w-6 h-6" style={{ color: "#22d3ee" }} />
+                    <History className="w-6 h-6" style={{ color: "#6abf69" }} />
                     <span
                       style={{
                         backgroundImage:
-                          "linear-gradient(135deg, #22d3ee, #a855f7)",
+                          "linear-gradient(135deg, #6abf69, #e8a838)",
                         WebkitBackgroundClip: "text",
                         WebkitTextFillColor: "transparent",
                       }}
@@ -2105,7 +2326,7 @@ export default function App() {
                         className="mt-6 px-8 py-3 rounded-xl font-black text-black"
                         style={{
                           background:
-                            "linear-gradient(135deg, #22d3ee, #a855f7)",
+                            "linear-gradient(135deg, #6abf69, #e8a838)",
                         }}
                       >
                         {t("profile.goShop")}
@@ -2171,7 +2392,7 @@ export default function App() {
                                 </span>
                                 <p
                                   className="font-bold"
-                                  style={{ color: "#22d3ee" }}
+                                  style={{ color: "#6abf69" }}
                                 >
                                   {getDeliveryDate(order.created_at)}
                                 </p>
@@ -2222,7 +2443,7 @@ export default function App() {
                                         i <= curStep
                                           ? {
                                               background:
-                                                "linear-gradient(135deg, #22d3ee, #a855f7)",
+                                                "linear-gradient(135deg, #6abf69, #e8a838)",
                                             }
                                           : {}
                                       }
@@ -2230,14 +2451,14 @@ export default function App() {
                                       {i + 1}
                                     </div>
                                     <span
-                                      className={`text-[9px] font-bold mt-1 ${i <= curStep ? "text-cyan-400" : "text-zinc-600"}`}
+                                      className={`text-[9px] font-bold mt-1 ${i <= curStep ? "text-[#6abf69]" : "text-zinc-600"}`}
                                     >
                                       {stepLabels[s]}
                                     </span>
                                   </div>
                                   {i < 3 && (
                                     <div
-                                      className={`h-1 w-10 rounded mb-4 ${i < curStep ? "bg-gradient-to-r from-cyan-400 to-purple-500" : "bg-white/10"}`}
+                                      className={`h-1 w-10 rounded mb-4 ${i < curStep ? "bg-gradient-to-r from-[#6abf69] to-[#e8a838]" : "bg-white/10"}`}
                                     />
                                   )}
                                 </React.Fragment>
@@ -2307,7 +2528,7 @@ export default function App() {
                           value: stats?.productCount || 0,
                           icon: Package,
                           color: darkMode
-                            ? "text-purple-400"
+                            ? "text-[#e8a838]"
                             : "text-purple-600",
                           bg: darkMode ? "bg-purple-500/10" : "bg-purple-50",
                         },
@@ -2602,7 +2823,7 @@ export default function App() {
                       {partners.map((p) => (
                         <div
                           key={p.id}
-                          className={`rounded-3xl border p-6 transition-all ${darkMode ? "bg-zinc-800/50 border-white/8 hover:border-cyan-500/30" : "bg-white border-zinc-200 shadow-sm hover:shadow-md"}`}
+                          className={`rounded-3xl border p-6 transition-all ${darkMode ? "bg-zinc-800/50 border-white/8 hover:border-[#6abf69]/30" : "bg-white border-zinc-200 shadow-sm hover:shadow-md"}`}
                         >
                           <div className="flex items-start justify-between mb-4">
                             <div>
@@ -2739,7 +2960,7 @@ export default function App() {
                             </td>
                             <td className="px-6 py-5">
                               <span
-                                className={`px-2 py-1 rounded text-[10px] font-black ${log.source === "FE" ? "bg-blue-500/20 text-blue-400" : log.source === "BE" ? "bg-purple-500/20 text-purple-400" : "bg-amber-500/20 text-amber-400"}`}
+                                className={`px-2 py-1 rounded text-[10px] font-black ${log.source === "FE" ? "bg-blue-500/20 text-blue-400" : log.source === "BE" ? "bg-[#e8a838]/20 text-[#e8a838]" : "bg-amber-500/20 text-amber-400"}`}
                               >
                                 {log.source}
                               </span>
@@ -2790,7 +3011,7 @@ export default function App() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9, y: 30 }}
                 transition={{ type: "spring", damping: 25, stiffness: 300 }}
-                className="relative w-full max-w-3xl rounded-[32px] overflow-hidden"
+                className="relative w-full max-w-3xl rounded-[32px] overflow-y-auto max-h-[92vh]"
                 style={{
                   background: darkMode
                     ? "linear-gradient(135deg, #18181b, #1c1c22)"
@@ -2835,7 +3056,7 @@ export default function App() {
                     <div>
                       <span
                         className="text-[10px] font-black uppercase tracking-widest"
-                        style={{ color: "#22d3ee" }}
+                        style={{ color: "#6abf69" }}
                       >
                         {selectedProduct.category}
                       </span>
@@ -2871,7 +3092,7 @@ export default function App() {
                       className="text-3xl font-black"
                       style={{
                         backgroundImage:
-                          "linear-gradient(135deg, #22d3ee, #a855f7)",
+                          "linear-gradient(135deg, #6abf69, #e8a838)",
                         WebkitBackgroundClip: "text",
                         WebkitTextFillColor: "transparent",
                       }}
@@ -2911,15 +3132,15 @@ export default function App() {
                     {/* Buttons */}
                     <div className="flex gap-3 mt-auto">
                       <button
-                        onClick={() => {
-                          addToCart(selectedProduct);
+                        onClick={(e) => {
+                          addToCart(selectedProduct, e);
                           setSelectedProduct(null);
                         }}
                         disabled={selectedProduct.stock < 1}
                         className="flex-1 py-3.5 rounded-2xl font-black flex items-center justify-center gap-2 text-sm text-black disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:opacity-90"
                         style={{
                           background:
-                            "linear-gradient(135deg, #22d3ee, #a855f7)",
+                            "linear-gradient(135deg, #6abf69, #e8a838)",
                         }}
                       >
                         <ShoppingCart className="w-4 h-4" />
@@ -2969,6 +3190,71 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+                {/* Related Products */}
+                {(() => {
+                  const related = products
+                    .filter(
+                      (p) =>
+                        p.category === selectedProduct.category &&
+                        p.id !== selectedProduct.id,
+                    )
+                    .slice(0, 4);
+                  if (related.length === 0) return null;
+                  return (
+                    <div
+                      className={`border-t px-8 py-6 ${darkMode ? "border-white/10" : "border-zinc-100"}`}
+                    >
+                      <div className="flex items-center gap-2 mb-4">
+                        <Sparkles
+                          className="w-4 h-4"
+                          style={{ color: "#6abf69" }}
+                        />
+                        <p
+                          className="text-sm font-black uppercase tracking-widest"
+                          style={{ color: "#6abf69" }}
+                        >
+                          {language === "vi"
+                            ? "Sản phẩm liên quan"
+                            : "Related Products"}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {related.map((rp) => (
+                          <button
+                            key={rp.id}
+                            onClick={() => setSelectedProduct(rp)}
+                            className={`rounded-2xl overflow-hidden text-left transition-all hover:scale-105 border ${
+                              darkMode
+                                ? "border-white/5 hover:border-white/15"
+                                : "border-zinc-100 hover:border-zinc-200"
+                            }`}
+                          >
+                            <img
+                              src={getProductImage(rp)}
+                              alt={rp.name}
+                              className="w-full h-20 object-cover"
+                            />
+                            <div
+                              className={`p-2 ${darkMode ? "bg-white/3" : "bg-zinc-50"}`}
+                            >
+                              <p
+                                className={`text-xs font-black leading-snug truncate ${darkMode ? "text-white" : "text-zinc-900"}`}
+                              >
+                                {rp.name}
+                              </p>
+                              <p
+                                className="text-xs font-bold"
+                                style={{ color: "#6abf69" }}
+                              >
+                                {fmtVND(rp.price)}
+                              </p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </motion.div>
             </div>
           </>
@@ -3050,13 +3336,68 @@ export default function App() {
               <div
                 className={`p-8 border-t space-y-4 ${darkMode ? "border-white/10 bg-zinc-800/50" : "border-zinc-100 bg-zinc-50"}`}
               >
+                {/* Coupon input */}
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                    <input
+                      type="text"
+                      placeholder={
+                        language === "vi"
+                          ? "Nhập mã giảm giá..."
+                          : "Coupon code..."
+                      }
+                      value={couponInput}
+                      onChange={(e) => {
+                        setCouponInput(e.target.value);
+                        setCouponMsg(null);
+                      }}
+                      onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
+                      className={`w-full pl-9 pr-3 py-2.5 rounded-xl text-sm font-medium outline-none border transition-all ${
+                        darkMode
+                          ? "bg-white/5 border-white/10 text-white placeholder-zinc-500"
+                          : "bg-white border-zinc-200 text-zinc-900 placeholder-zinc-400"
+                      }`}
+                    />
+                  </div>
+                  <button
+                    onClick={applyCoupon}
+                    className="px-4 py-2.5 rounded-xl text-sm font-black text-white transition-all hover:opacity-90 flex-shrink-0"
+                    style={{
+                      background: "linear-gradient(135deg, #6abf69, #e8a838)",
+                    }}
+                  >
+                    {language === "vi" ? "Áp dụng" : "Apply"}
+                  </button>
+                </div>
+                {couponMsg && (
+                  <p
+                    className={`text-xs font-bold ${couponMsg.ok ? "text-emerald-400" : "text-red-400"}`}
+                  >
+                    {couponMsg.text}
+                  </p>
+                )}
                 <div
                   className={`flex items-center justify-between text-2xl font-black ${darkMode ? "text-white" : "text-zinc-900"}`}
                 >
                   <span>{t("cart.total")}</span>
-                  <span className="bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">
-                    {fmtVND(cartTotal)}
-                  </span>
+                  <div className="text-right">
+                    {discount > 0 && (
+                      <p className="text-sm font-bold text-zinc-400 line-through mb-0.5">
+                        {fmtVND(cartTotal)}
+                      </p>
+                    )}
+                    <span
+                      style={{
+                        backgroundImage:
+                          "linear-gradient(135deg, #6abf69, #e8a838)",
+                        WebkitBackgroundClip: "text",
+                        WebkitTextFillColor: "transparent",
+                      }}
+                    >
+                      {fmtVND(finalTotal)}
+                    </span>
+                  </div>
                 </div>
                 <button
                   disabled={cart.length === 0}
@@ -3066,7 +3407,7 @@ export default function App() {
                   }}
                   className="w-full text-white py-6 rounded-[24px] font-black text-lg hover:opacity-90 transition-all disabled:opacity-40 shadow-xl"
                   style={{
-                    background: "linear-gradient(135deg, #22d3ee, #a855f7)",
+                    background: "linear-gradient(135deg, #6abf69, #e8a838)",
                   }}
                 >
                   {t("cart.proceed")}
@@ -3543,9 +3884,9 @@ export default function App() {
                     </div>
                   )}
                   {regSuccess && (
-                    <div className="flex items-center gap-2 p-3 bg-cyan-500/10 rounded-xl border border-cyan-500/20">
-                      <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
-                      <p className="text-sm text-cyan-400 font-medium">
+                    <div className="flex items-center gap-2 p-3 bg-cyan-500/10 rounded-xl border border-[#6abf69]/20">
+                      <CheckCircle2 className="w-4 h-4 text-[#6abf69] shrink-0" />
+                      <p className="text-sm text-[#6abf69] font-medium">
                         {regSuccess}
                       </p>
                     </div>
@@ -3579,14 +3920,14 @@ export default function App() {
                           }
                           className={`flex items-center gap-2 p-3 rounded-xl border font-bold text-sm transition-all ${
                             regForm.role === opt.val
-                              ? "border-cyan-500/60 bg-cyan-500/10 text-cyan-400"
+                              ? "border-[#6abf69]/60 bg-cyan-500/10 text-[#6abf69]"
                               : "border-white/10 text-zinc-400 hover:border-white/20 hover:text-white"
                           }`}
                         >
                           <span className="text-lg">{opt.icon}</span>
                           {opt.label}
                           {regForm.role === opt.val && (
-                            <span className="ml-auto text-cyan-400">✓</span>
+                            <span className="ml-auto text-[#6abf69]">✓</span>
                           )}
                         </button>
                       ))}
@@ -3608,7 +3949,7 @@ export default function App() {
                             ? "Cửa hàng của tôi"
                             : "My Awesome Store"
                         }
-                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm font-medium text-white outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500/50 transition-all"
+                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm font-medium text-white outline-none focus:ring-2 focus:ring-cyan-500 focus:border-[#6abf69]/50 transition-all"
                       />
                     </div>
                   )}
@@ -3686,8 +4027,8 @@ export default function App() {
                     onClick={handleRegister}
                     className="w-full py-4 rounded-xl font-black text-black transition-all hover:scale-[1.02]"
                     style={{
-                      background: "linear-gradient(135deg, #22d3ee, #a855f7)",
-                      boxShadow: "0 0 20px rgba(139,92,246,0.3)",
+                      background: "linear-gradient(135deg, #6abf69, #e8a838)",
+                      boxShadow: "0 0 20px rgba(106,191,105,0.3)",
                     }}
                   >
                     {t("auth.registerBtn")}
@@ -3720,7 +4061,7 @@ export default function App() {
                 className="px-8 py-6 text-white flex items-center justify-between"
                 style={{
                   background:
-                    "linear-gradient(135deg, rgba(251,146,60,0.2), rgba(139,92,246,0.2))",
+                    "linear-gradient(135deg, rgba(251,146,60,0.2), rgba(106,191,105,0.2))",
                 }}
               >
                 <h2 className="text-xl font-black">
@@ -3821,7 +4162,7 @@ export default function App() {
                   disabled={!partnerAddForm.name || !partnerAddForm.price}
                   className="w-full text-white py-4 rounded-xl font-black hover:opacity-90 transition-all disabled:opacity-40"
                   style={{
-                    background: "linear-gradient(135deg, #fb923c, #a855f7)",
+                    background: "linear-gradient(135deg, #fb923c, #e8a838)",
                   }}
                 >
                   {language === "vi" ? "Đăng sản phẩm" : "List Product"}
@@ -3830,6 +4171,177 @@ export default function App() {
             </motion.div>
           </div>
         )}
+      </AnimatePresence>
+
+      {/* ── FALLING LEAVES ── */}
+      <div className="fixed inset-0 pointer-events-none z-[3] overflow-hidden">
+        {[
+          {
+            id: 0,
+            left: "7%",
+            size: 10,
+            dur: 12,
+            delay: 0,
+            color: "#6abf69",
+            sway: 35,
+          },
+          {
+            id: 1,
+            left: "17%",
+            size: 7,
+            dur: 9,
+            delay: -3.5,
+            color: "#a8d5a2",
+            sway: 25,
+          },
+          {
+            id: 2,
+            left: "28%",
+            size: 13,
+            dur: 14,
+            delay: -7,
+            color: "#e8a838",
+            sway: 45,
+          },
+          {
+            id: 3,
+            left: "38%",
+            size: 8,
+            dur: 10,
+            delay: -1.5,
+            color: "#c5e8a0",
+            sway: 30,
+          },
+          {
+            id: 4,
+            left: "50%",
+            size: 11,
+            dur: 11,
+            delay: -9,
+            color: "#6abf69",
+            sway: 40,
+          },
+          {
+            id: 5,
+            left: "61%",
+            size: 6,
+            dur: 8,
+            delay: -5,
+            color: "#a8d5a2",
+            sway: 20,
+          },
+          {
+            id: 6,
+            left: "72%",
+            size: 9,
+            dur: 13,
+            delay: -2,
+            color: "#e8a838",
+            sway: 50,
+          },
+          {
+            id: 7,
+            left: "82%",
+            size: 12,
+            dur: 10,
+            delay: -8,
+            color: "#6abf69",
+            sway: 35,
+          },
+          {
+            id: 8,
+            left: "91%",
+            size: 7,
+            dur: 11,
+            delay: -4,
+            color: "#c5e8a0",
+            sway: 30,
+          },
+          {
+            id: 9,
+            left: "13%",
+            size: 9,
+            dur: 9,
+            delay: -6,
+            color: "#e8a838",
+            sway: 40,
+          },
+          {
+            id: 10,
+            left: "45%",
+            size: 6,
+            dur: 15,
+            delay: -11,
+            color: "#a8d5a2",
+            sway: 25,
+          },
+          {
+            id: 11,
+            left: "67%",
+            size: 10,
+            dur: 12,
+            delay: -0.5,
+            color: "#6abf69",
+            sway: 45,
+          },
+        ].map((leaf) => (
+          <motion.div
+            key={leaf.id}
+            className="absolute opacity-60"
+            style={{
+              left: leaf.left,
+              top: "-20px",
+              width: leaf.size,
+              height: leaf.size * 1.5,
+              background: leaf.color,
+              borderRadius: "50% 0 50% 0",
+              filter: "blur(0.5px)",
+            }}
+            animate={{
+              y: ["0vh", "108vh"],
+              x: [0, leaf.sway, 0, -leaf.sway, 0],
+              rotate: [0, 120, 240, 360],
+              opacity: [0, 0.6, 0.6, 0.6, 0],
+            }}
+            transition={{
+              duration: leaf.dur,
+              delay: leaf.delay,
+              repeat: Infinity,
+              ease: "linear",
+              times: [0, 0.1, 0.5, 0.9, 1],
+            }}
+          />
+        ))}
+      </div>
+
+      {/* ── CART FLY PARTICLES ── */}
+      <AnimatePresence>
+        {flyParticles.map((p) => (
+          <motion.div
+            key={p.id}
+            className="fixed z-[999] w-6 h-6 rounded-full pointer-events-none flex items-center justify-center text-xs"
+            style={{
+              left: p.x - 12,
+              top: p.y - 12,
+              background: "linear-gradient(135deg, #6abf69, #e8a838)",
+              boxShadow: "0 0 12px rgba(106,191,105,0.8)",
+            }}
+            initial={{ scale: 1, opacity: 1, x: 0, y: 0 }}
+            animate={{
+              scale: [1, 1.4, 0.4],
+              opacity: [1, 1, 0],
+              x:
+                typeof window !== "undefined"
+                  ? window.innerWidth - p.x - 60
+                  : 300,
+              y: typeof window !== "undefined" ? 30 - p.y : -200,
+            }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.75, ease: [0.4, 0, 0.2, 1] }}
+          >
+            <ShoppingCart className="w-3 h-3 text-black" />
+          </motion.div>
+        ))}
       </AnimatePresence>
 
       {/* ── FLOATING DEBUG BUTTON ── */}
