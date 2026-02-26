@@ -241,6 +241,7 @@ export default function App() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [checkoutStep, setCheckoutStep] = useState<1 | 2 | 3>(1);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -1120,6 +1121,7 @@ export default function App() {
                               "1px solid rgba(255,255,255,0.08)"),
                             (e.currentTarget.style.boxShadow = "none")
                           )}
+                          onClick={() => setSelectedProduct(product)}
                         >
                           <div
                             className={`aspect-square rounded-2xl overflow-hidden mb-5 ${darkMode ? "bg-zinc-900" : "bg-zinc-100"} relative`}
@@ -1164,7 +1166,10 @@ export default function App() {
                               </p>
                             </div>
                             <button
-                              onClick={() => addToCart(product)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addToCart(product);
+                              }}
                               disabled={product.stock < 1}
                               className="w-full py-3.5 rounded-xl font-black flex items-center justify-center gap-2 text-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed text-black"
                               style={
@@ -2767,6 +2772,208 @@ export default function App() {
           </motion.div>
         </AnimatePresence>
       </main>
+
+      {/* ── PRODUCT DETAIL MODAL ── */}
+      <AnimatePresence>
+        {selectedProduct && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedProduct(null)}
+              className="fixed inset-0 bg-black/70 backdrop-blur-md z-[60]"
+            />
+            <div className="fixed inset-0 z-[61] flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 30 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 30 }}
+                transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                className="relative w-full max-w-3xl rounded-[32px] overflow-hidden"
+                style={{
+                  background: darkMode
+                    ? "linear-gradient(135deg, #18181b, #1c1c22)"
+                    : "white",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  boxShadow: "0 40px 80px rgba(0,0,0,0.5)",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Close button */}
+                <button
+                  onClick={() => setSelectedProduct(null)}
+                  className="absolute top-4 right-4 z-10 w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110"
+                  style={{
+                    background: "rgba(255,255,255,0.1)",
+                    color: "white",
+                  }}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+
+                <div className="flex flex-col sm:flex-row">
+                  {/* Image */}
+                  <div className="sm:w-2/5 relative">
+                    <img
+                      src={getProductImage(selectedProduct)}
+                      alt={selectedProduct.name}
+                      className="w-full h-64 sm:h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                    {selectedProduct.stock < 1 && (
+                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                        <span className="text-red-400 font-black text-sm uppercase tracking-widest border border-red-400/40 px-3 py-1 rounded-xl">
+                          {language === "vi" ? "Hết hàng" : "Out of stock"}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Info */}
+                  <div className="sm:w-3/5 p-8 flex flex-col gap-5">
+                    <div>
+                      <span
+                        className="text-[10px] font-black uppercase tracking-widest"
+                        style={{ color: "#22d3ee" }}
+                      >
+                        {selectedProduct.category}
+                      </span>
+                      <h2
+                        className={`text-2xl font-black mt-1 leading-tight ${
+                          darkMode ? "text-white" : "text-zinc-900"
+                        }`}
+                      >
+                        {selectedProduct.name}
+                      </h2>
+                    </div>
+
+                    {/* Stars */}
+                    <div className="flex items-center gap-1.5">
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <Star
+                          key={s}
+                          className="w-4 h-4"
+                          fill={s <= 4 ? "#eab308" : "none"}
+                          stroke="#eab308"
+                          strokeWidth={2}
+                        />
+                      ))}
+                      <span
+                        className={`text-sm font-bold ml-1 ${darkMode ? "text-zinc-400" : "text-zinc-500"}`}
+                      >
+                        4.0 / 5
+                      </span>
+                    </div>
+
+                    {/* Price */}
+                    <p
+                      className="text-3xl font-black"
+                      style={{
+                        backgroundImage:
+                          "linear-gradient(135deg, #22d3ee, #a855f7)",
+                        WebkitBackgroundClip: "text",
+                        WebkitTextFillColor: "transparent",
+                      }}
+                    >
+                      {fmtVND(selectedProduct.price)}
+                    </p>
+
+                    {/* Description */}
+                    {selectedProduct.description && (
+                      <p
+                        className={`text-sm leading-relaxed ${darkMode ? "text-zinc-400" : "text-zinc-600"}`}
+                      >
+                        {selectedProduct.description}
+                      </p>
+                    )}
+
+                    {/* Stock info */}
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-2 h-2 rounded-full ${
+                          selectedProduct.stock > 0
+                            ? "bg-emerald-400"
+                            : "bg-red-400"
+                        }`}
+                      />
+                      <span
+                        className={`text-sm font-bold ${selectedProduct.stock > 0 ? "text-emerald-400" : "text-red-400"}`}
+                      >
+                        {selectedProduct.stock > 0
+                          ? `${language === "vi" ? "Còn" : "In stock"}: ${selectedProduct.stock} ${language === "vi" ? "sản phẩm" : "items"}`
+                          : language === "vi"
+                            ? "Hết hàng"
+                            : "Out of stock"}
+                      </span>
+                    </div>
+
+                    {/* Buttons */}
+                    <div className="flex gap-3 mt-auto">
+                      <button
+                        onClick={() => {
+                          addToCart(selectedProduct);
+                          setSelectedProduct(null);
+                        }}
+                        disabled={selectedProduct.stock < 1}
+                        className="flex-1 py-3.5 rounded-2xl font-black flex items-center justify-center gap-2 text-sm text-black disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:opacity-90"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, #22d3ee, #a855f7)",
+                        }}
+                      >
+                        <ShoppingCart className="w-4 h-4" />
+                        {selectedProduct.stock < 1
+                          ? language === "vi"
+                            ? "Hết hàng"
+                            : "Out of stock"
+                          : language === "vi"
+                            ? "Thêm vào giỏ"
+                            : "Add to cart"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setWishlist((prev) => {
+                            const next = new Set(prev);
+                            next.has(selectedProduct.id)
+                              ? next.delete(selectedProduct.id)
+                              : next.add(selectedProduct.id);
+                            return next;
+                          });
+                        }}
+                        className="w-12 h-12 rounded-2xl flex items-center justify-center transition-all hover:scale-110 flex-shrink-0"
+                        style={{
+                          background: wishlist.has(selectedProduct.id)
+                            ? "rgba(239,68,68,0.2)"
+                            : "rgba(255,255,255,0.07)",
+                          border: wishlist.has(selectedProduct.id)
+                            ? "1px solid rgba(239,68,68,0.4)"
+                            : "1px solid rgba(255,255,255,0.1)",
+                        }}
+                      >
+                        <Heart
+                          className="w-5 h-5"
+                          fill={
+                            wishlist.has(selectedProduct.id)
+                              ? "#ef4444"
+                              : "none"
+                          }
+                          stroke={
+                            wishlist.has(selectedProduct.id)
+                              ? "#ef4444"
+                              : "#a1a1aa"
+                          }
+                          strokeWidth={2}
+                        />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* ── CART DRAWER ── */}
       <AnimatePresence>
