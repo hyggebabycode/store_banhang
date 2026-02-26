@@ -161,7 +161,7 @@ const PRODUCT_COLORS = [
 export default function App() {
   const { t, language } = useLanguage();
   const [view, setView] = useState<
-    "shop" | "products" | "debug" | "admin" | "profile"
+    "shop" | "products" | "debug" | "admin" | "profile" | "partner"
   >("shop");
   const [darkMode, setDarkMode] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -170,6 +170,19 @@ export default function App() {
   const [productsCatFilter, setProductsCatFilter] = useState("All");
   const [wishlist, setWishlist] = useState<Set<number>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
+  // Partner state
+  const [partnerTab, setPartnerTab] = useState<
+    "products" | "orders" | "revenue"
+  >("products");
+  const [isPartnerAddOpen, setIsPartnerAddOpen] = useState(false);
+  const [partnerAddForm, setPartnerAddForm] = useState({
+    name: "",
+    price: 0,
+    description: "",
+    image: "",
+    category: "Mobile",
+    stock: 10,
+  });
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<Product[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -201,7 +214,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<{
     email: string;
     name: string;
-    role: "admin" | "customer";
+    role: "admin" | "customer" | "partner";
   } | null>(null);
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [loginError, setLoginError] = useState("");
@@ -281,7 +294,10 @@ export default function App() {
       email: registerForm.email,
       password: registerForm.password,
       name: registerForm.name,
-      role: registerForm.role === "partner" ? "customer" : "customer",
+      role: (registerForm.role === "partner" ? "partner" : "customer") as
+        | "admin"
+        | "customer"
+        | "partner",
     });
     localStorage.setItem("registeredUsers", JSON.stringify(stored));
     setRegisterSuccess(
@@ -310,7 +326,8 @@ export default function App() {
   const handleLogout = () => {
     logger.log("INFO", `User logged out: ${currentUser?.email}`);
     setCurrentUser(null);
-    if (view === "admin" || view === "profile") setView("shop");
+    if (view === "admin" || view === "profile" || view === "partner")
+      setView("shop");
   };
 
   const fetchData = useCallback(async () => {
@@ -373,6 +390,10 @@ export default function App() {
   };
 
   const addToCart = (product: Product) => {
+    if (!currentUser) {
+      setIsLoginOpen(true);
+      return;
+    }
     if (product.stock < 1) {
       alert(t("store.outOfStock"));
       return;
@@ -525,6 +546,69 @@ export default function App() {
     : [];
   const cartTotal = cart.reduce((sum, item) => sum + item.price, 0);
 
+  // Partner helpers
+  const getPartnerListingIds = (email: string): number[] => {
+    try {
+      return JSON.parse(localStorage.getItem(`pL_${email}`) || "[]");
+    } catch {
+      return [];
+    }
+  };
+  const partnerListingIds =
+    currentUser?.role === "partner"
+      ? getPartnerListingIds(currentUser.email)
+      : [];
+  const partnerOwnProducts = products.filter((p) =>
+    partnerListingIds.includes(p.id),
+  );
+  const partnerRevenue = orders
+    .filter((o) => {
+      try {
+        const items: Product[] = JSON.parse(o.items);
+        return items.some((i) => partnerListingIds.includes(i.id));
+      } catch {
+        return false;
+      }
+    })
+    .reduce((s, o) => s + o.total, 0);
+  const partnerInfo = currentUser
+    ? partners.find((p) => p.email === currentUser.email)
+    : null;
+
+  const handlePartnerAddProduct = async () => {
+    if (!currentUser) return;
+    try {
+      const res = await fetch("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(partnerAddForm),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const newId: number = data?.id ?? data?.[0]?.id ?? Date.now();
+        const stored = getPartnerListingIds(currentUser.email);
+        stored.push(newId);
+        localStorage.setItem(`pL_${currentUser.email}`, JSON.stringify(stored));
+        setIsPartnerAddOpen(false);
+        setPartnerAddForm({
+          name: "",
+          price: 0,
+          description: "",
+          image: "",
+          category: "Mobile",
+          stock: 10,
+        });
+        fetchData();
+        logger.log(
+          "INFO",
+          `Partner ${currentUser.email} added product: ${partnerAddForm.name}`,
+        );
+      }
+    } catch (err) {
+      logger.log("ERROR", "Partner add product failed", err);
+    }
+  };
+
   const fmtVND = (n: number) => new Intl.NumberFormat("vi-VN").format(n) + "đ";
   const statusColor: Record<string, string> = {
     PENDING: "bg-amber-100 text-amber-700",
@@ -581,6 +665,14 @@ export default function App() {
               },
               ...(currentUser?.role === "admin"
                 ? [{ id: "admin" as const, label: t("nav.admin") }]
+                : []),
+              ...(currentUser?.role === "partner"
+                ? [
+                    {
+                      id: "partner" as const,
+                      label: language === "vi" ? "Gian hàng" : "My Store",
+                    },
+                  ]
                 : []),
               { id: "debug" as const, label: t("nav.debug") },
             ].map((item) => (
@@ -650,7 +742,11 @@ export default function App() {
                     {currentUser.name}
                   </p>
                   <p className="text-[10px] text-zinc-400 font-bold uppercase">
-                    {currentUser.role === "admin" ? "👑 Admin" : "👤 Customer"}
+                    {currentUser.role === "admin"
+                      ? "👑 Admin"
+                      : currentUser.role === "partner"
+                        ? "🏪 Partner"
+                        : "👤 Customer"}
                   </p>
                 </div>
               </button>
@@ -683,161 +779,1206 @@ export default function App() {
         className="max-w-7xl mx-auto px-6 py-10"
         style={{ position: "relative" }}
       >
-        {/* ════ SHOP ════ */}
-        {view === "shop" && (
-          <div className="space-y-16">
-            <section
-              className="relative h-[580px] rounded-[40px] overflow-hidden flex items-center px-16"
-              style={{
-                background:
-                  "linear-gradient(135deg, #09090b 0%, #0e0a1f 40%, #0a0f1e 100%)",
-              }}
-            >
-              {/* Grid bg */}
-              <div
-                className="absolute inset-0"
-                style={{
-                  backgroundImage:
-                    "linear-gradient(rgba(139,92,246,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(139,92,246,0.06) 1px, transparent 1px)",
-                  backgroundSize: "60px 60px",
-                }}
-              />
-              {/* Neon orbs */}
-              <div
-                className="absolute top-10 right-20 w-96 h-96 rounded-full"
-                style={{
-                  background:
-                    "radial-gradient(circle, rgba(139,92,246,0.2) 0%, transparent 70%)",
-                  filter: "blur(40px)",
-                }}
-              />
-              <div
-                className="absolute bottom-0 right-1/3 w-72 h-72 rounded-full"
-                style={{
-                  background:
-                    "radial-gradient(circle, rgba(6,182,212,0.15) 0%, transparent 70%)",
-                  filter: "blur(40px)",
-                }}
-              />
-              {/* Geometric shapes */}
-              <div className="absolute top-16 right-16 w-48 h-48 border border-purple-500/20 rounded-3xl rotate-12" />
-              <div className="absolute top-24 right-24 w-32 h-32 border border-cyan-500/20 rounded-2xl -rotate-6" />
-              <div className="absolute bottom-16 right-48 w-20 h-20 bg-cyan-500/5 border border-cyan-500/20 rounded-xl rotate-45" />
-              {/* Hero product carousel */}
-              <div className="absolute right-16 top-1/2 -translate-y-1/2 w-72 h-72 hidden xl:block">
-                <div className="relative w-full h-full">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={view}
+            initial={{ opacity: 0, y: 22 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -14 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+          >
+            {/* ════ SHOP ════ */}
+            {view === "shop" && (
+              <div className="space-y-16">
+                <section
+                  className="relative h-[580px] rounded-[40px] overflow-hidden flex items-center px-16"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, #09090b 0%, #0e0a1f 40%, #0a0f1e 100%)",
+                  }}
+                >
+                  {/* Grid bg */}
                   <div
-                    className="absolute inset-0 rounded-3xl"
+                    className="absolute inset-0"
                     style={{
-                      background:
-                        "linear-gradient(135deg, rgba(139,92,246,0.3), rgba(6,182,212,0.3))",
-                      filter: "blur(30px)",
+                      backgroundImage:
+                        "linear-gradient(rgba(139,92,246,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(139,92,246,0.06) 1px, transparent 1px)",
+                      backgroundSize: "60px 60px",
                     }}
                   />
-                  <AnimatePresence mode="wait">
-                    <motion.img
-                      key={heroIdx}
-                      src={
-                        products[heroIdx]?.image ||
-                        "https://picsum.photos/seed/iphone15/400/400"
-                      }
-                      initial={{ opacity: 0, x: 40 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -40 }}
-                      transition={{ duration: 0.4, ease: "easeInOut" }}
-                      className="relative w-full h-full object-cover rounded-3xl opacity-90"
-                      alt=""
-                      style={{ border: "1px solid rgba(255,255,255,0.1)" }}
-                    />
-                  </AnimatePresence>
-                  {/* Dot indicators */}
-                  {products.length > 1 && (
-                    <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 flex gap-1.5">
-                      {products.slice(0, 6).map((_, i) => (
-                        <button
-                          key={i}
-                          onClick={() => setHeroIdx(i)}
-                          className={`rounded-full transition-all duration-300 ${
-                            i === heroIdx
-                              ? "w-5 h-1.5 bg-cyan-400"
-                              : "w-1.5 h-1.5 bg-white/30 hover:bg-white/60"
-                          }`}
+                  {/* Neon orbs */}
+                  <div
+                    className="absolute top-10 right-20 w-96 h-96 rounded-full"
+                    style={{
+                      background:
+                        "radial-gradient(circle, rgba(139,92,246,0.2) 0%, transparent 70%)",
+                      filter: "blur(40px)",
+                    }}
+                  />
+                  <div
+                    className="absolute bottom-0 right-1/3 w-72 h-72 rounded-full"
+                    style={{
+                      background:
+                        "radial-gradient(circle, rgba(6,182,212,0.15) 0%, transparent 70%)",
+                      filter: "blur(40px)",
+                    }}
+                  />
+                  {/* Geometric shapes */}
+                  <div className="absolute top-16 right-16 w-48 h-48 border border-purple-500/20 rounded-3xl rotate-12" />
+                  <div className="absolute top-24 right-24 w-32 h-32 border border-cyan-500/20 rounded-2xl -rotate-6" />
+                  <div className="absolute bottom-16 right-48 w-20 h-20 bg-cyan-500/5 border border-cyan-500/20 rounded-xl rotate-45" />
+                  {/* Hero product carousel */}
+                  <div className="absolute right-16 top-1/2 -translate-y-1/2 w-72 h-72 hidden xl:block">
+                    <div className="relative w-full h-full">
+                      <div
+                        className="absolute inset-0 rounded-3xl"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, rgba(139,92,246,0.3), rgba(6,182,212,0.3))",
+                          filter: "blur(30px)",
+                        }}
+                      />
+                      <AnimatePresence mode="wait">
+                        <motion.img
+                          key={heroIdx}
+                          src={
+                            products[heroIdx]?.image ||
+                            "https://picsum.photos/seed/iphone15/400/400"
+                          }
+                          initial={{ opacity: 0, x: 40 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: -40 }}
+                          transition={{ duration: 0.4, ease: "easeInOut" }}
+                          className="relative w-full h-full object-cover rounded-3xl opacity-90 cursor-pointer hover:scale-105 transition-transform"
+                          alt=""
+                          style={{ border: "1px solid rgba(255,255,255,0.1)" }}
+                          onClick={() => setView("products")}
+                          title={
+                            language === "vi"
+                              ? "Xem tất cả sản phẩm"
+                              : "View all products"
+                          }
                         />
+                      </AnimatePresence>
+                      {/* Dot indicators */}
+                      {products.length > 1 && (
+                        <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 flex gap-1.5">
+                          {products.slice(0, 6).map((_, i) => (
+                            <button
+                              key={i}
+                              onClick={() => setHeroIdx(i)}
+                              className={`rounded-full transition-all duration-300 ${
+                                i === heroIdx
+                                  ? "w-5 h-1.5 bg-cyan-400"
+                                  : "w-1.5 h-1.5 bg-white/30 hover:bg-white/60"
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="relative z-10 max-w-xl space-y-8">
+                    <div
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-full font-mono text-xs font-black uppercase tracking-widest"
+                      style={{
+                        background: "rgba(6,182,212,0.1)",
+                        border: "1px solid rgba(6,182,212,0.3)",
+                        color: "#22d3ee",
+                      }}
+                    >
+                      <div
+                        className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"
+                        style={{ boxShadow: "0 0 6px #22d3ee" }}
+                      />
+                      <Clock className="w-3 h-3" /> {t("store.hero.badge")}
+                    </div>
+                    <h2 className="text-7xl font-black leading-[0.9] tracking-tighter">
+                      <span className="text-white">
+                        {t("store.hero.title")
+                          .split(" ")
+                          .slice(0, -1)
+                          .join(" ")}
+                      </span>{" "}
+                      <span
+                        style={{
+                          backgroundImage:
+                            "linear-gradient(135deg, #22d3ee, #a855f7)",
+                          WebkitBackgroundClip: "text",
+                          WebkitTextFillColor: "transparent",
+                        }}
+                      >
+                        {t("store.hero.title").split(" ").slice(-1)}
+                      </span>
+                      <span
+                        style={{
+                          color: "#22d3ee",
+                          textShadow: "0 0 20px #22d3ee",
+                        }}
+                      >
+                        _
+                      </span>
+                    </h2>
+                    <p className="text-zinc-400 text-lg font-medium max-w-md">
+                      {t("store.hero.desc")}
+                    </p>
+                    <div className="flex gap-4">
+                      <button
+                        onClick={() =>
+                          document
+                            .getElementById("products-section")
+                            ?.scrollIntoView({ behavior: "smooth" })
+                        }
+                        className="px-8 py-4 font-black text-lg text-black rounded-2xl transition-all hover:scale-105"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, #22d3ee, #a855f7)",
+                          boxShadow: "0 0 30px rgba(139,92,246,0.4)",
+                        }}
+                      >
+                        {t("store.hero.cta")}
+                      </button>
+                      <button
+                        onClick={() => setView("products")}
+                        className="px-8 py-4 font-black text-lg text-white rounded-2xl border border-white/10 hover:border-white/30 hover:bg-white/5 transition-all"
+                      >
+                        {language === "vi" ? "Khám phá →" : "Explore →"}
+                      </button>
+                    </div>
+                  </div>
+                </section>
+
+                <section>
+                  <div
+                    id="products-section"
+                    className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12"
+                  >
+                    <div>
+                      <h3 className="text-4xl font-black tracking-tighter mb-2">
+                        <span
+                          style={{
+                            backgroundImage:
+                              "linear-gradient(135deg, #22d3ee, #a855f7)",
+                            WebkitBackgroundClip: "text",
+                            WebkitTextFillColor: "transparent",
+                          }}
+                        >
+                          {t("store.section.title")}
+                        </span>
+                      </h3>
+                      <p className="text-zinc-500 font-medium">
+                        {t("store.section.desc")}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap bg-zinc-900/50 border border-white/10 p-1.5 rounded-2xl gap-1 backdrop-blur-sm">
+                      {categories.map((cat) => (
+                        <button
+                          key={cat}
+                          onClick={() => setCategoryFilter(cat)}
+                          className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                            categoryFilter === cat
+                              ? "text-black font-black"
+                              : "text-zinc-400 hover:text-white hover:bg-white/5"
+                          }`}
+                          style={
+                            categoryFilter === cat
+                              ? {
+                                  background:
+                                    "linear-gradient(135deg, #22d3ee, #a855f7)",
+                                }
+                              : {}
+                          }
+                        >
+                          {cat === "All" ? t("store.filter.all") : cat}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {loading ? (
+                    <div className="flex items-center justify-center h-48">
+                      <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+                      {filteredProducts.map((product) => (
+                        <motion.div
+                          key={product.id}
+                          whileHover={{ y: -10, scale: 1.02 }}
+                          className="group relative rounded-[28px] p-5 transition-all cursor-pointer overflow-hidden"
+                          style={
+                            darkMode
+                              ? {
+                                  background:
+                                    "linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.06))",
+                                  border: "1px solid rgba(255,255,255,0.08)",
+                                  backdropFilter: "blur(10px)",
+                                }
+                              : {
+                                  background: "white",
+                                  border: "1px solid rgba(0,0,0,0.08)",
+                                  boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
+                                }
+                          }
+                          onMouseEnter={(e) => (
+                            (e.currentTarget.style.border =
+                              "1px solid rgba(139,92,246,0.4)"),
+                            (e.currentTarget.style.boxShadow =
+                              "0 0 30px rgba(139,92,246,0.15)")
+                          )}
+                          onMouseLeave={(e) => (
+                            (e.currentTarget.style.border =
+                              "1px solid rgba(255,255,255,0.08)"),
+                            (e.currentTarget.style.boxShadow = "none")
+                          )}
+                        >
+                          <div
+                            className={`aspect-square rounded-2xl overflow-hidden mb-5 ${darkMode ? "bg-zinc-900" : "bg-zinc-100"} relative`}
+                          >
+                            <img
+                              src={product.image}
+                              alt={product.name}
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 opacity-90"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                            {product.stock < 1 && (
+                              <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                <span className="text-red-400 font-black text-sm uppercase tracking-widest">
+                                  OUT
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="space-y-3">
+                            <span
+                              className="text-[10px] font-black uppercase tracking-widest"
+                              style={{ color: "#22d3ee" }}
+                            >
+                              {product.category}
+                            </span>
+                            <div className="flex justify-between items-start gap-2">
+                              <h4
+                                className={`font-black text-base ${darkMode ? "text-white" : "text-zinc-900"} leading-snug`}
+                              >
+                                {product.name}
+                              </h4>
+                              <p
+                                className="text-base font-black whitespace-nowrap"
+                                style={{
+                                  backgroundImage:
+                                    "linear-gradient(135deg, #22d3ee, #a855f7)",
+                                  WebkitBackgroundClip: "text",
+                                  WebkitTextFillColor: "transparent",
+                                }}
+                              >
+                                {fmtVND(product.price)}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => addToCart(product)}
+                              disabled={product.stock < 1}
+                              className="w-full py-3.5 rounded-xl font-black flex items-center justify-center gap-2 text-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed text-black"
+                              style={
+                                product.stock >= 1
+                                  ? {
+                                      background:
+                                        "linear-gradient(135deg, #22d3ee, #a855f7)",
+                                    }
+                                  : {
+                                      background: "rgba(255,255,255,0.05)",
+                                      color: "#71717a",
+                                    }
+                              }
+                            >
+                              <ShoppingCart className="w-4 h-4" />
+                              {product.stock < 1
+                                ? t("store.outOfStock")
+                                : t("store.addToCart")}
+                            </button>
+                          </div>
+                        </motion.div>
                       ))}
                     </div>
                   )}
-                </div>
+                </section>
               </div>
-              <div className="relative z-10 max-w-xl space-y-8">
+            )}
+
+            {/* ════ PRODUCTS PAGE ════ */}
+            {view === "products" && (
+              <div className="space-y-5">
+                {/* Header row */}
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setView("shop")}
+                      className={`text-sm font-bold transition-colors ${
+                        darkMode
+                          ? "text-zinc-400 hover:text-white"
+                          : "text-zinc-500 hover:text-zinc-900"
+                      }`}
+                    >
+                      ← {language === "vi" ? "Trang chủ" : "Home"}
+                    </button>
+                    <span
+                      className={darkMode ? "text-zinc-700" : "text-zinc-300"}
+                    >
+                      /
+                    </span>
+                    <span
+                      className="text-sm font-bold"
+                      style={{ color: "#22d3ee" }}
+                    >
+                      {language === "vi" ? "Sản phẩm" : "Products"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`text-sm font-medium ${darkMode ? "text-zinc-500" : "text-zinc-400"}`}
+                    >
+                      {productsPageFiltered.length}{" "}
+                      {language === "vi" ? "sản phẩm" : "items"}
+                    </span>
+                    {(searchQuery ||
+                      priceRangeIdx !== -1 ||
+                      colorFilter !== "" ||
+                      productsCatFilter !== "All") && (
+                      <button
+                        onClick={() => {
+                          setSearchQuery("");
+                          setPriceRangeIdx(-1);
+                          setColorFilter("");
+                          setProductsCatFilter("All");
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-all"
+                      >
+                        <X className="w-3 h-3" />{" "}
+                        {language === "vi" ? "Xóa bộ lọc" : "Clear"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Compact filter bar ── */}
                 <div
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full font-mono text-xs font-black uppercase tracking-widest"
+                  className={`rounded-2xl border ${
+                    darkMode
+                      ? "bg-zinc-900/80 border-white/8"
+                      : "bg-white border-zinc-200 shadow-sm"
+                  }`}
+                >
+                  {/* Row 1: search + toggle button */}
+                  <div className="flex items-center gap-3 p-3">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                      <input
+                        type="text"
+                        placeholder={
+                          language === "vi"
+                            ? "Tìm sản phẩm..."
+                            : "Search products..."
+                        }
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className={`w-full pl-9 pr-3 py-2.5 rounded-xl text-sm font-medium outline-none transition-all ${
+                          darkMode
+                            ? "bg-white/5 border border-white/10 text-white placeholder-zinc-500 focus:border-cyan-500/50"
+                            : "bg-zinc-50 border border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-cyan-400"
+                        }`}
+                      />
+                    </div>
+                    <button
+                      onClick={() => setShowFilters(!showFilters)}
+                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all border flex-shrink-0 ${
+                        showFilters
+                          ? "text-black border-transparent"
+                          : darkMode
+                            ? "border-white/10 text-zinc-400 hover:text-white bg-white/5"
+                            : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
+                      }`}
+                      style={
+                        showFilters
+                          ? {
+                              background:
+                                "linear-gradient(135deg, #22d3ee, #a855f7)",
+                            }
+                          : {}
+                      }
+                    >
+                      <SlidersHorizontal className="w-4 h-4" />
+                      {language === "vi" ? "Bộ lọc" : "Filters"}
+                      {(priceRangeIdx !== -1 || colorFilter !== "") && (
+                        <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Row 2: category pills */}
+                  <div
+                    className={`px-3 pb-3 flex flex-wrap gap-2 border-t ${darkMode ? "border-white/5" : "border-zinc-100"}`}
+                  >
+                    <div className="w-full" />
+                    {categories.map((cat) => (
+                      <button
+                        key={cat}
+                        onClick={() => setProductsCatFilter(cat)}
+                        className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                          productsCatFilter === cat
+                            ? "text-black border-transparent"
+                            : darkMode
+                              ? "border-white/10 text-zinc-400 hover:text-white bg-white/5"
+                              : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-zinc-50"
+                        }`}
+                        style={
+                          productsCatFilter === cat
+                            ? {
+                                background:
+                                  "linear-gradient(135deg, #22d3ee, #a855f7)",
+                              }
+                            : {}
+                        }
+                      >
+                        {cat === "All"
+                          ? language === "vi"
+                            ? "Tất cả"
+                            : "All"
+                          : cat}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Expandable: price + color */}
+                  <AnimatePresence>
+                    {showFilters && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.22 }}
+                        style={{ overflow: "hidden" }}
+                      >
+                        <div
+                          className={`px-4 py-4 flex flex-col gap-4 border-t ${darkMode ? "border-white/5" : "border-zinc-100"}`}
+                        >
+                          {/* Price */}
+                          <div className="flex items-center flex-wrap gap-2">
+                            <span
+                              className={`text-xs font-black uppercase tracking-widest w-16 flex-shrink-0 ${darkMode ? "text-zinc-500" : "text-zinc-400"}`}
+                            >
+                              {language === "vi" ? "💰 Giá" : "💰 Price"}
+                            </span>
+                            {[
+                              {
+                                label: language === "vi" ? "Tất cả" : "All",
+                                idx: -1,
+                              },
+                              ...PRICE_RANGES.map((r, i) => ({
+                                label:
+                                  language === "vi" ? r.labelVi : r.labelEn,
+                                idx: i,
+                              })),
+                            ].map(({ label, idx }) => (
+                              <button
+                                key={idx}
+                                onClick={() => setPriceRangeIdx(idx)}
+                                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                                  priceRangeIdx === idx
+                                    ? "text-black border-transparent"
+                                    : darkMode
+                                      ? "border-white/10 text-zinc-400 hover:text-white bg-white/5"
+                                      : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
+                                }`}
+                                style={
+                                  priceRangeIdx === idx
+                                    ? {
+                                        background:
+                                          "linear-gradient(135deg, #22d3ee, #a855f7)",
+                                      }
+                                    : {}
+                                }
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                          {/* Color */}
+                          <div className="flex items-center flex-wrap gap-2">
+                            <span
+                              className={`text-xs font-black uppercase tracking-widest w-16 flex-shrink-0 ${darkMode ? "text-zinc-500" : "text-zinc-400"}`}
+                            >
+                              {language === "vi" ? "🎨 Màu" : "🎨 Color"}
+                            </span>
+                            <button
+                              onClick={() => setColorFilter("")}
+                              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                                colorFilter === ""
+                                  ? "text-black border-transparent"
+                                  : darkMode
+                                    ? "border-white/10 text-zinc-400 hover:text-white bg-white/5"
+                                    : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
+                              }`}
+                              style={
+                                colorFilter === ""
+                                  ? {
+                                      background:
+                                        "linear-gradient(135deg, #22d3ee, #a855f7)",
+                                    }
+                                  : {}
+                              }
+                            >
+                              {language === "vi" ? "Tất cả" : "All"}
+                            </button>
+                            {PRODUCT_COLORS.map((c) => (
+                              <button
+                                key={c.value}
+                                onClick={() =>
+                                  setColorFilter(
+                                    colorFilter === c.value ? "" : c.value,
+                                  )
+                                }
+                                title={
+                                  language === "vi" ? c.labelVi : c.labelEn
+                                }
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                                  colorFilter === c.value
+                                    ? darkMode
+                                      ? "border-cyan-500/60 bg-cyan-500/10 text-cyan-300"
+                                      : "border-cyan-400 bg-cyan-50 text-cyan-700"
+                                    : darkMode
+                                      ? "border-white/10 text-zinc-400 hover:text-white bg-white/5"
+                                      : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
+                                }`}
+                              >
+                                <span
+                                  className="w-3.5 h-3.5 rounded-full border border-white/20 flex-shrink-0"
+                                  style={{ backgroundColor: c.hex }}
+                                />
+                                {language === "vi" ? c.labelVi : c.labelEn}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* Product grid */}
+                {loading ? (
+                  <div className="flex items-center justify-center h-48">
+                    <div className="w-10 h-10 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : productsPageFiltered.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-24 gap-4">
+                    <PackageX className="w-16 h-16 text-zinc-600" />
+                    <p
+                      className={`font-black text-xl ${darkMode ? "text-zinc-600" : "text-zinc-400"}`}
+                    >
+                      {language === "vi"
+                        ? "Không tìm thấy sản phẩm nào"
+                        : "No products found"}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
+                    {productsPageFiltered.map((product) => {
+                      const isHot = product.id % 5 < 2;
+                      const assignedColor =
+                        PRODUCT_COLORS[product.id % PRODUCT_COLORS.length];
+                      const isWishlisted = wishlist.has(product.id);
+                      return (
+                        <motion.div
+                          key={product.id}
+                          whileHover={{ y: -8, scale: 1.02 }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 300,
+                            damping: 20,
+                          }}
+                          className="group relative rounded-2xl overflow-hidden cursor-pointer flex flex-col"
+                          style={
+                            darkMode
+                              ? {
+                                  background:
+                                    "linear-gradient(160deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))",
+                                  border: "1px solid rgba(255,255,255,0.07)",
+                                  backdropFilter: "blur(12px)",
+                                }
+                              : {
+                                  background: "white",
+                                  border: "1px solid rgba(0,0,0,0.07)",
+                                  boxShadow: "0 4px 20px rgba(0,0,0,0.06)",
+                                }
+                          }
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.border =
+                              "1px solid rgba(139,92,246,0.5)";
+                            e.currentTarget.style.boxShadow =
+                              "0 8px 40px rgba(139,92,246,0.2), 0 0 0 1px rgba(139,92,246,0.1)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.border = darkMode
+                              ? "1px solid rgba(255,255,255,0.07)"
+                              : "1px solid rgba(0,0,0,0.07)";
+                            e.currentTarget.style.boxShadow = darkMode
+                              ? "none"
+                              : "0 4px 20px rgba(0,0,0,0.06)";
+                          }}
+                        >
+                          {/* Image area */}
+                          <div
+                            className={`relative overflow-hidden ${darkMode ? "bg-zinc-900" : "bg-zinc-100"}`}
+                            style={{ aspectRatio: "3/4" }}
+                          >
+                            <img
+                              src={product.image}
+                              alt={product.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                            />
+                            {/* gradient overlay */}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+
+                            {/* HOT badge */}
+                            {isHot && product.stock > 0 && (
+                              <div
+                                className="absolute top-2.5 left-2.5 flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black text-white"
+                                style={{
+                                  background:
+                                    "linear-gradient(135deg, #f97316, #ef4444)",
+                                  boxShadow: "0 2px 8px rgba(239,68,68,0.4)",
+                                }}
+                              >
+                                <Flame className="w-3 h-3" /> HOT
+                              </div>
+                            )}
+
+                            {/* Color dot */}
+                            <div
+                              className="absolute top-2.5 right-9 w-3.5 h-3.5 rounded-full border border-white/60 shadow"
+                              style={{ backgroundColor: assignedColor.hex }}
+                              title={
+                                language === "vi"
+                                  ? assignedColor.labelVi
+                                  : assignedColor.labelEn
+                              }
+                            />
+
+                            {/* Wishlist button */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setWishlist((prev) => {
+                                  const next = new Set(prev);
+                                  next.has(product.id)
+                                    ? next.delete(product.id)
+                                    : next.add(product.id);
+                                  return next;
+                                });
+                              }}
+                              className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center transition-all"
+                              style={
+                                isWishlisted
+                                  ? {
+                                      background: "rgba(239,68,68,0.9)",
+                                      boxShadow:
+                                        "0 2px 8px rgba(239,68,68,0.5)",
+                                    }
+                                  : {
+                                      background: "rgba(0,0,0,0.35)",
+                                      backdropFilter: "blur(4px)",
+                                    }
+                              }
+                            >
+                              <Heart
+                                className="w-3 h-3"
+                                fill={isWishlisted ? "white" : "none"}
+                                stroke="white"
+                                strokeWidth={2.5}
+                              />
+                            </button>
+
+                            {/* Out of stock overlay */}
+                            {product.stock < 1 && (
+                              <div className="absolute inset-0 bg-black/65 flex items-center justify-center">
+                                <span className="text-red-400 font-black text-xs uppercase tracking-widest border border-red-400/40 px-2 py-0.5 rounded-lg">
+                                  {language === "vi"
+                                    ? "Hết hàng"
+                                    : "Out of stock"}
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Add to cart — slides up on hover */}
+                            <div className="absolute bottom-0 left-0 right-0 p-2.5 translate-y-full group-hover:translate-y-0 transition-transform duration-300">
+                              <button
+                                onClick={() => addToCart(product)}
+                                disabled={product.stock < 1}
+                                className="w-full py-2 rounded-xl font-black flex items-center justify-center gap-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed text-black"
+                                style={{
+                                  background:
+                                    "linear-gradient(135deg, #22d3ee, #a855f7)",
+                                }}
+                              >
+                                <ShoppingCart className="w-3.5 h-3.5" />
+                                {language === "vi"
+                                  ? "Thêm vào giỏ"
+                                  : "Add to cart"}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Info */}
+                          <div className="p-3 flex flex-col gap-1.5">
+                            <div className="flex items-center justify-between">
+                              <span
+                                className="text-[9px] font-black uppercase tracking-widest"
+                                style={{ color: "#22d3ee" }}
+                              >
+                                {product.category}
+                              </span>
+                              <div className="flex items-center gap-0.5">
+                                {[1, 2, 3, 4, 5].map((s) => (
+                                  <Star
+                                    key={s}
+                                    className="w-2.5 h-2.5"
+                                    fill={s <= 4 ? "#eab308" : "none"}
+                                    stroke="#eab308"
+                                    strokeWidth={2}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                            <h4
+                              className={`font-bold text-sm leading-tight line-clamp-2 ${darkMode ? "text-white" : "text-zinc-900"}`}
+                            >
+                              {product.name}
+                            </h4>
+                            <div className="flex items-center justify-between mt-0.5">
+                              <p
+                                className="text-sm font-black"
+                                style={{
+                                  backgroundImage:
+                                    "linear-gradient(135deg, #22d3ee, #a855f7)",
+                                  WebkitBackgroundClip: "text",
+                                  WebkitTextFillColor: "transparent",
+                                }}
+                              >
+                                {fmtVND(product.price)}
+                              </p>
+                              <span
+                                className={`text-[10px] font-medium ${product.stock > 0 ? "text-emerald-400" : "text-red-400"}`}
+                              >
+                                {product.stock > 0
+                                  ? `${product.stock} còn`
+                                  : "Hết"}
+                              </span>
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ════ PARTNER DASHBOARD ════ */}
+            {view === "partner" && currentUser?.role === "partner" && (
+              <div className="space-y-8">
+                {/* Banner */}
+                <div
+                  className="rounded-[40px] p-10 flex items-center gap-8 relative overflow-hidden"
                   style={{
-                    background: "rgba(6,182,212,0.1)",
-                    border: "1px solid rgba(6,182,212,0.3)",
-                    color: "#22d3ee",
+                    background:
+                      "linear-gradient(135deg, rgba(251,146,60,0.15), rgba(139,92,246,0.12))",
+                    border: "1px solid rgba(255,255,255,0.08)",
                   }}
                 >
                   <div
-                    className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"
-                    style={{ boxShadow: "0 0 6px #22d3ee" }}
-                  />
-                  <Clock className="w-3 h-3" /> {t("store.hero.badge")}
-                </div>
-                <h2 className="text-7xl font-black leading-[0.9] tracking-tighter">
-                  <span className="text-white">
-                    {t("store.hero.title").split(" ").slice(0, -1).join(" ")}
-                  </span>{" "}
-                  <span
+                    className="absolute inset-0"
                     style={{
                       backgroundImage:
-                        "linear-gradient(135deg, #22d3ee, #a855f7)",
-                      WebkitBackgroundClip: "text",
-                      WebkitTextFillColor: "transparent",
+                        "linear-gradient(rgba(251,146,60,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(251,146,60,0.05) 1px, transparent 1px)",
+                      backgroundSize: "40px 40px",
+                    }}
+                  />
+                  <div
+                    className="relative w-20 h-20 rounded-full flex items-center justify-center text-4xl font-black flex-shrink-0"
+                    style={{
+                      background: "linear-gradient(135deg, #fb923c, #a855f7)",
+                      boxShadow: "0 0 30px rgba(251,146,60,0.4)",
                     }}
                   >
-                    {t("store.hero.title").split(" ").slice(-1)}
-                  </span>
-                  <span
-                    style={{ color: "#22d3ee", textShadow: "0 0 20px #22d3ee" }}
-                  >
-                    _
-                  </span>
-                </h2>
-                <p className="text-zinc-400 text-lg font-medium max-w-md">
-                  {t("store.hero.desc")}
-                </p>
-                <div className="flex gap-4">
+                    🏪
+                  </div>
+                  <div className="relative flex-1">
+                    <div className="flex items-center gap-3 mb-1 flex-wrap">
+                      <p className="text-zinc-400 text-sm font-bold uppercase tracking-widest">
+                        {language === "vi"
+                          ? "Gian hàng đối tác"
+                          : "Partner Store"}
+                      </p>
+                      {partnerInfo && (
+                        <span
+                          className={`text-xs font-black px-3 py-1 rounded-full ${
+                            partnerInfo.status === "APPROVED"
+                              ? "bg-emerald-500/20 text-emerald-400"
+                              : partnerInfo.status === "REJECTED"
+                                ? "bg-red-500/20 text-red-400"
+                                : "bg-amber-500/20 text-amber-400"
+                          }`}
+                        >
+                          {partnerInfo.status === "APPROVED"
+                            ? "✓ Đã duyệt"
+                            : partnerInfo.status === "REJECTED"
+                              ? "✗ Từ chối"
+                              : "⏳ Chờ duyệt"}
+                        </span>
+                      )}
+                    </div>
+                    <h2 className="text-4xl font-black text-white">
+                      {partnerInfo?.name || currentUser.name}
+                    </h2>
+                    <p className="text-zinc-400 mt-1">{currentUser.email}</p>
+                  </div>
                   <button
-                    onClick={() =>
-                      document
-                        .getElementById("products-section")
-                        ?.scrollIntoView({ behavior: "smooth" })
-                    }
-                    className="px-8 py-4 font-black text-lg text-black rounded-2xl transition-all hover:scale-105"
+                    onClick={() => setIsPartnerAddOpen(true)}
+                    className="relative flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-white text-sm flex-shrink-0 hover:opacity-90 transition-all"
+                    style={{
+                      background: "linear-gradient(135deg, #fb923c, #a855f7)",
+                      boxShadow: "0 0 20px rgba(251,146,60,0.3)",
+                    }}
+                  >
+                    <Plus className="w-4 h-4" />
+                    {language === "vi" ? "Đăng sản phẩm" : "List Product"}
+                  </button>
+                </div>
+
+                {/* Stats row */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                  {[
+                    {
+                      label:
+                        language === "vi"
+                          ? "Sản phẩm đã đăng"
+                          : "Products Listed",
+                      value: partnerOwnProducts.length,
+                      icon: Package,
+                      color: "text-orange-400",
+                      bg: darkMode ? "bg-orange-500/10" : "bg-orange-50",
+                    },
+                    {
+                      label:
+                        language === "vi"
+                          ? "Doanh thu ước tính"
+                          : "Est. Revenue",
+                      value: fmtVND(partnerRevenue),
+                      icon: BarChart3,
+                      color: "text-emerald-400",
+                      bg: darkMode ? "bg-emerald-500/10" : "bg-emerald-50",
+                    },
+                    {
+                      label:
+                        language === "vi"
+                          ? "Đơn hàng liên quan"
+                          : "Related Orders",
+                      value: orders.filter((o) => {
+                        try {
+                          const items = JSON.parse(o.items);
+                          return items.some((i) =>
+                            partnerListingIds.includes(i.id),
+                          );
+                        } catch {
+                          return false;
+                        }
+                      }).length,
+                      icon: ShoppingCart,
+                      color: "text-purple-400",
+                      bg: darkMode ? "bg-purple-500/10" : "bg-purple-50",
+                    },
+                  ].map((s, i) => (
+                    <div
+                      key={i}
+                      className={`p-6 rounded-3xl border flex items-center gap-4 ${darkMode ? "bg-zinc-800/40 border-white/8" : "bg-white border-zinc-200 shadow-sm"}`}
+                    >
+                      <div className={`p-3 rounded-2xl ${s.bg}`}>
+                        <s.icon className={`w-6 h-6 ${s.color}`} />
+                      </div>
+                      <div>
+                        <p
+                          className={`text-xs font-bold uppercase tracking-wider ${darkMode ? "text-zinc-500" : "text-zinc-400"}`}
+                        >
+                          {s.label}
+                        </p>
+                        <p
+                          className={`text-2xl font-black mt-0.5 ${darkMode ? "text-white" : "text-zinc-900"}`}
+                        >
+                          {s.value}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Tabs */}
+                <div
+                  className={`flex gap-1 p-1 rounded-2xl w-fit border ${darkMode ? "bg-white/5 border-white/10" : "bg-zinc-100 border-zinc-200"}`}
+                >
+                  {(["products", "orders"] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() =>
+                        setPartnerTab(tab as "products" | "orders" | "revenue")
+                      }
+                      className={`px-5 py-2.5 rounded-xl text-sm font-black uppercase tracking-widest transition-all ${
+                        partnerTab === tab
+                          ? "bg-gradient-to-r from-orange-500/20 to-purple-500/20 text-orange-400 border border-orange-500/30"
+                          : darkMode
+                            ? "text-zinc-400 hover:text-white hover:bg-white/5"
+                            : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200"
+                      }`}
+                    >
+                      {tab === "products"
+                        ? language === "vi"
+                          ? "Sản phẩm"
+                          : "Products"
+                        : language === "vi"
+                          ? "Đơn hàng"
+                          : "Orders"}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Products tab */}
+                {partnerTab === "products" && (
+                  <div>
+                    {partnerOwnProducts.length === 0 ? (
+                      <div
+                        className={`rounded-3xl p-16 text-center border ${darkMode ? "bg-white/3 border-white/8" : "bg-white border-zinc-200"}`}
+                      >
+                        <Package
+                          className={`w-16 h-16 mx-auto mb-4 ${darkMode ? "text-zinc-700" : "text-zinc-300"}`}
+                        />
+                        <p
+                          className={`font-black text-xl mb-2 ${darkMode ? "text-zinc-600" : "text-zinc-400"}`}
+                        >
+                          {language === "vi"
+                            ? "Chưa có sản phẩm nào"
+                            : "No products yet"}
+                        </p>
+                        <p
+                          className={`text-sm mb-6 ${darkMode ? "text-zinc-700" : "text-zinc-400"}`}
+                        >
+                          {language === "vi"
+                            ? "Hãy đăng sản phẩm đầu tiên của bạn!"
+                            : "List your first product!"}
+                        </p>
+                        <button
+                          onClick={() => setIsPartnerAddOpen(true)}
+                          className="px-6 py-3 rounded-2xl font-black text-white text-sm hover:opacity-90 transition-all"
+                          style={{
+                            background:
+                              "linear-gradient(135deg, #fb923c, #a855f7)",
+                          }}
+                        >
+                          <Plus className="w-4 h-4 inline mr-2" />
+                          {language === "vi" ? "Đăng sản phẩm" : "List Product"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                        {partnerOwnProducts.map((p) => (
+                          <motion.div
+                            key={p.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className={`rounded-2xl overflow-hidden border ${darkMode ? "bg-zinc-800/40 border-white/8" : "bg-white border-zinc-200 shadow-sm"}`}
+                          >
+                            <div className="relative aspect-square overflow-hidden">
+                              <img
+                                src={p.image}
+                                alt={p.name}
+                                className="w-full h-full object-cover"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                              <span
+                                className={`absolute bottom-2 left-2 text-xs font-black px-2 py-1 rounded-lg ${p.stock > 0 ? "bg-emerald-500/80 text-white" : "bg-red-500/80 text-white"}`}
+                              >
+                                {p.stock > 0 ? `${p.stock} còn` : "Hết"}
+                              </span>
+                            </div>
+                            <div className="p-4">
+                              <p
+                                className={`text-xs font-bold uppercase tracking-wider mb-1 ${darkMode ? "text-zinc-500" : "text-zinc-400"}`}
+                              >
+                                {p.category}
+                              </p>
+                              <h4
+                                className={`font-black text-sm leading-tight mb-2 ${darkMode ? "text-white" : "text-zinc-900"}`}
+                              >
+                                {p.name}
+                              </h4>
+                              <p className="text-orange-400 font-black">
+                                {fmtVND(p.price)}
+                              </p>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Orders tab */}
+                {partnerTab === "orders" && (
+                  <div
+                    className={`rounded-3xl border overflow-hidden ${darkMode ? "bg-zinc-800/40 border-white/8" : "bg-white border-zinc-200 shadow-sm"}`}
+                  >
+                    {orders.filter((o) => {
+                      try {
+                        const items = JSON.parse(o.items);
+                        return items.some((i) =>
+                          partnerListingIds.includes(i.id),
+                        );
+                      } catch {
+                        return false;
+                      }
+                    }).length === 0 ? (
+                      <div className="p-16 text-center">
+                        <ShoppingCart
+                          className={`w-12 h-12 mx-auto mb-3 ${darkMode ? "text-zinc-700" : "text-zinc-300"}`}
+                        />
+                        <p
+                          className={`font-bold ${darkMode ? "text-zinc-600" : "text-zinc-400"}`}
+                        >
+                          {language === "vi"
+                            ? "Chưa có đơn hàng"
+                            : "No orders yet"}
+                        </p>
+                      </div>
+                    ) : (
+                      <table className="w-full text-left">
+                        <thead>
+                          <tr
+                            className={`text-xs font-black uppercase tracking-widest ${darkMode ? "text-zinc-500 border-b border-white/8" : "text-zinc-400 border-b border-zinc-100"}`}
+                          >
+                            <th className="px-6 py-4">#</th>
+                            <th className="px-6 py-4">
+                              {language === "vi" ? "Khách hàng" : "Customer"}
+                            </th>
+                            <th className="px-6 py-4">
+                              {language === "vi" ? "Tổng" : "Total"}
+                            </th>
+                            <th className="px-6 py-4">
+                              {language === "vi" ? "Trạng thái" : "Status"}
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {orders
+                            .filter((o) => {
+                              try {
+                                const items = JSON.parse(o.items);
+                                return items.some((i) =>
+                                  partnerListingIds.includes(i.id),
+                                );
+                              } catch {
+                                return false;
+                              }
+                            })
+                            .map((o) => (
+                              <tr
+                                key={o.id}
+                                className={`border-t text-sm ${darkMode ? "border-white/5 hover:bg-white/3" : "border-zinc-100 hover:bg-zinc-50"}`}
+                              >
+                                <td
+                                  className={`px-6 py-4 font-black ${darkMode ? "text-zinc-400" : "text-zinc-500"}`}
+                                >
+                                  #{o.id}
+                                </td>
+                                <td
+                                  className={`px-6 py-4 font-medium ${darkMode ? "text-white" : "text-zinc-900"}`}
+                                >
+                                  {o.customer_name}
+                                </td>
+                                <td className="px-6 py-4 text-emerald-400 font-black">
+                                  {fmtVND(o.total)}
+                                </td>
+                                <td className="px-6 py-4">
+                                  <span
+                                    className={`text-xs font-black px-3 py-1 rounded-full ${statusColor[o.status] || "bg-zinc-100 text-zinc-600"}`}
+                                  >
+                                    {o.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Partner blocked (not approved) ── */}
+            {view === "partner" && currentUser?.role !== "partner" && (
+              <div className="flex flex-col items-center justify-center h-64 text-center space-y-4">
+                <Lock className="w-16 h-16 text-zinc-300" />
+                <h3 className="text-2xl font-black text-zinc-400">
+                  Chỉ đối tác mới có thể truy cập
+                </h3>
+              </div>
+            )}
+
+            {/* ════ PROFILE (customer) ════ */}
+            {view === "profile" && currentUser && (
+              <div className="space-y-10">
+                <div
+                  className="rounded-[40px] p-10 flex items-center gap-8 relative overflow-hidden"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, rgba(139,92,246,0.15), rgba(6,182,212,0.1))",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                  }}
+                >
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      backgroundImage:
+                        "linear-gradient(rgba(139,92,246,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(139,92,246,0.05) 1px, transparent 1px)",
+                      backgroundSize: "40px 40px",
+                    }}
+                  />
+                  <div
+                    className="relative w-20 h-20 rounded-full flex items-center justify-center text-4xl font-black"
                     style={{
                       background: "linear-gradient(135deg, #22d3ee, #a855f7)",
                       boxShadow: "0 0 30px rgba(139,92,246,0.4)",
                     }}
                   >
-                    {t("store.hero.cta")}
-                  </button>
-                  <button
-                    onClick={() => setView("products")}
-                    className="px-8 py-4 font-black text-lg text-white rounded-2xl border border-white/10 hover:border-white/30 hover:bg-white/5 transition-all"
-                  >
-                    {language === "vi" ? "Khám phá →" : "Explore →"}
-                  </button>
+                    {currentUser.name.charAt(0)}
+                  </div>
+                  <div className="relative">
+                    <p className="text-zinc-400 text-sm font-bold uppercase tracking-widest mb-1">
+                      {t("profile.welcome")}
+                    </p>
+                    <h2 className="text-4xl font-black text-white">
+                      {currentUser.name}
+                    </h2>
+                    <p className="text-zinc-400 mt-1">
+                      {currentUser.email} ·{" "}
+                      <span
+                        className="font-bold uppercase"
+                        style={{ color: "#22d3ee" }}
+                      >
+                        {currentUser.role}
+                      </span>
+                    </p>
+                  </div>
                 </div>
-              </div>
-            </section>
-
-            <section>
-              <div
-                id="products-section"
-                className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12"
-              >
                 <div>
-                  <h3 className="text-4xl font-black tracking-tighter mb-2">
+                  <h3 className="text-2xl font-black mb-6 flex items-center gap-3">
+                    <History className="w-6 h-6" style={{ color: "#22d3ee" }} />
                     <span
                       style={{
                         backgroundImage:
@@ -846,1206 +1987,695 @@ export default function App() {
                         WebkitTextFillColor: "transparent",
                       }}
                     >
-                      {t("store.section.title")}
+                      {t("profile.orderHistory")}
                     </span>
                   </h3>
-                  <p className="text-zinc-500 font-medium">
-                    {t("store.section.desc")}
-                  </p>
-                </div>
-                <div className="flex flex-wrap bg-zinc-900/50 border border-white/10 p-1.5 rounded-2xl gap-1 backdrop-blur-sm">
-                  {categories.map((cat) => (
-                    <button
-                      key={cat}
-                      onClick={() => setCategoryFilter(cat)}
-                      className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                        categoryFilter === cat
-                          ? "text-black font-black"
-                          : "text-zinc-400 hover:text-white hover:bg-white/5"
-                      }`}
-                      style={
-                        categoryFilter === cat
-                          ? {
-                              background:
-                                "linear-gradient(135deg, #22d3ee, #a855f7)",
-                            }
-                          : {}
-                      }
+                  {userOrders.length === 0 ? (
+                    <div
+                      className="rounded-3xl p-16 text-center"
+                      style={{
+                        background: "rgba(255,255,255,0.03)",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                      }}
                     >
-                      {cat === "All" ? t("store.filter.all") : cat}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {loading ? (
-                <div className="flex items-center justify-center h-48">
-                  <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-                  {filteredProducts.map((product) => (
-                    <motion.div
-                      key={product.id}
-                      whileHover={{ y: -10, scale: 1.02 }}
-                      className="group relative rounded-[28px] p-5 transition-all cursor-pointer overflow-hidden"
-                      style={
-                        darkMode
-                          ? {
-                              background:
-                                "linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.06))",
-                              border: "1px solid rgba(255,255,255,0.08)",
-                              backdropFilter: "blur(10px)",
-                            }
-                          : {
-                              background: "white",
-                              border: "1px solid rgba(0,0,0,0.08)",
-                              boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
-                            }
-                      }
-                      onMouseEnter={(e) => (
-                        (e.currentTarget.style.border =
-                          "1px solid rgba(139,92,246,0.4)"),
-                        (e.currentTarget.style.boxShadow =
-                          "0 0 30px rgba(139,92,246,0.15)")
-                      )}
-                      onMouseLeave={(e) => (
-                        (e.currentTarget.style.border =
-                          "1px solid rgba(255,255,255,0.08)"),
-                        (e.currentTarget.style.boxShadow = "none")
-                      )}
-                    >
-                      <div
-                        className={`aspect-square rounded-2xl overflow-hidden mb-5 ${darkMode ? "bg-zinc-900" : "bg-zinc-100"} relative`}
+                      <ShoppingCart
+                        className="w-16 h-16 mx-auto mb-4"
+                        style={{ color: "rgba(255,255,255,0.08)" }}
+                      />
+                      <p className="text-zinc-500 font-medium">
+                        {t("profile.noOrders")}
+                      </p>
+                      <button
+                        onClick={() => setView("shop")}
+                        className="mt-6 px-8 py-3 rounded-xl font-black text-black"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, #22d3ee, #a855f7)",
+                        }}
                       >
-                        <img
-                          src={product.image}
-                          alt={product.name}
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 opacity-90"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                        {product.stock < 1 && (
-                          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                            <span className="text-red-400 font-black text-sm uppercase tracking-widest">
-                              OUT
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="space-y-3">
-                        <span
-                          className="text-[10px] font-black uppercase tracking-widest"
-                          style={{ color: "#22d3ee" }}
-                        >
-                          {product.category}
-                        </span>
-                        <div className="flex justify-between items-start gap-2">
-                          <h4
-                            className={`font-black text-base ${darkMode ? "text-white" : "text-zinc-900"} leading-snug`}
-                          >
-                            {product.name}
-                          </h4>
-                          <p
-                            className="text-base font-black whitespace-nowrap"
+                        {t("profile.goShop")}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {userOrders.map((order) => {
+                        const items =
+                          typeof order.items === "string"
+                            ? (() => {
+                                try {
+                                  return JSON.parse(order.items as string);
+                                } catch {
+                                  return [];
+                                }
+                              })()
+                            : order.items || [];
+                        const statusSteps = [
+                          "PENDING",
+                          "CONFIRMED",
+                          "SHIPPING",
+                          "COMPLETED",
+                        ];
+                        const curStep = statusSteps.indexOf(order.status);
+                        const stepLabels: Record<string, string> = {
+                          PENDING: t("admin.statusPending"),
+                          CONFIRMED: t("admin.statusConfirmed"),
+                          SHIPPING: t("admin.statusShipping"),
+                          COMPLETED: t("admin.statusCompleted"),
+                        };
+                        return (
+                          <div
+                            key={order.id}
+                            className="rounded-3xl p-6 transition-all"
                             style={{
-                              backgroundImage:
-                                "linear-gradient(135deg, #22d3ee, #a855f7)",
-                              WebkitBackgroundClip: "text",
-                              WebkitTextFillColor: "transparent",
+                              background: "rgba(255,255,255,0.03)",
+                              border: "1px solid rgba(255,255,255,0.08)",
                             }}
                           >
-                            {fmtVND(product.price)}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => addToCart(product)}
-                          disabled={product.stock < 1}
-                          className="w-full py-3.5 rounded-xl font-black flex items-center justify-center gap-2 text-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed text-black"
-                          style={
-                            product.stock >= 1
-                              ? {
-                                  background:
-                                    "linear-gradient(135deg, #22d3ee, #a855f7)",
-                                }
-                              : {
-                                  background: "rgba(255,255,255,0.05)",
-                                  color: "#71717a",
-                                }
-                          }
-                        >
-                          <ShoppingCart className="w-4 h-4" />
-                          {product.stock < 1
-                            ? t("store.outOfStock")
-                            : t("store.addToCart")}
-                        </button>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
-        )}
-
-        {/* ════ PRODUCTS PAGE ════ */}
-        {view === "products" && (
-          <div className="space-y-5">
-            {/* Header row */}
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setView("shop")}
-                  className={`text-sm font-bold transition-colors ${
-                    darkMode
-                      ? "text-zinc-400 hover:text-white"
-                      : "text-zinc-500 hover:text-zinc-900"
-                  }`}
-                >
-                  ← {language === "vi" ? "Trang chủ" : "Home"}
-                </button>
-                <span className={darkMode ? "text-zinc-700" : "text-zinc-300"}>
-                  /
-                </span>
-                <span
-                  className="text-sm font-bold"
-                  style={{ color: "#22d3ee" }}
-                >
-                  {language === "vi" ? "Sản phẩm" : "Products"}
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span
-                  className={`text-sm font-medium ${darkMode ? "text-zinc-500" : "text-zinc-400"}`}
-                >
-                  {productsPageFiltered.length}{" "}
-                  {language === "vi" ? "sản phẩm" : "items"}
-                </span>
-                {(searchQuery ||
-                  priceRangeIdx !== -1 ||
-                  colorFilter !== "" ||
-                  productsCatFilter !== "All") && (
-                  <button
-                    onClick={() => {
-                      setSearchQuery("");
-                      setPriceRangeIdx(-1);
-                      setColorFilter("");
-                      setProductsCatFilter("All");
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-all"
-                  >
-                    <X className="w-3 h-3" />{" "}
-                    {language === "vi" ? "Xóa bộ lọc" : "Clear"}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* ── Compact filter bar ── */}
-            <div
-              className={`rounded-2xl border ${
-                darkMode ? "bg-zinc-900/80 border-white/8" : "bg-white border-zinc-200 shadow-sm"
-              }`}
-            >
-              {/* Row 1: search + toggle button */}
-              <div className="flex items-center gap-3 p-3">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                  <input
-                    type="text"
-                    placeholder={language === "vi" ? "Tìm sản phẩm..." : "Search products..."}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className={`w-full pl-9 pr-3 py-2.5 rounded-xl text-sm font-medium outline-none transition-all ${
-                      darkMode
-                        ? "bg-white/5 border border-white/10 text-white placeholder-zinc-500 focus:border-cyan-500/50"
-                        : "bg-zinc-50 border border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-cyan-400"
-                    }`}
-                  />
-                </div>
-                <button
-                  onClick={() => setShowFilters(!showFilters)}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all border flex-shrink-0 ${
-                    showFilters
-                      ? "text-black border-transparent"
-                      : darkMode
-                        ? "border-white/10 text-zinc-400 hover:text-white bg-white/5"
-                        : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
-                  }`}
-                  style={showFilters ? { background: "linear-gradient(135deg, #22d3ee, #a855f7)" } : {}}
-                >
-                  <SlidersHorizontal className="w-4 h-4" />
-                  {language === "vi" ? "Bộ lọc" : "Filters"}
-                  {(priceRangeIdx !== -1 || colorFilter !== "") && (
-                    <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                  )}
-                </button>
-              </div>
-
-              {/* Row 2: category pills */}
-              <div className={`px-3 pb-3 flex flex-wrap gap-2 border-t ${darkMode ? "border-white/5" : "border-zinc-100"}`}>
-                <div className="w-full" />
-                {categories.map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setProductsCatFilter(cat)}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all border ${
-                      productsCatFilter === cat
-                        ? "text-black border-transparent"
-                        : darkMode
-                          ? "border-white/10 text-zinc-400 hover:text-white bg-white/5"
-                          : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-zinc-50"
-                    }`}
-                    style={productsCatFilter === cat ? { background: "linear-gradient(135deg, #22d3ee, #a855f7)" } : {}}
-                  >
-                    {cat === "All" ? (language === "vi" ? "Tất cả" : "All") : cat}
-                  </button>
-                ))}
-              </div>
-
-              {/* Expandable: price + color */}
-              <AnimatePresence>
-                {showFilters && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.22 }}
-                    style={{ overflow: "hidden" }}
-                  >
-                    <div className={`px-4 py-4 flex flex-col gap-4 border-t ${darkMode ? "border-white/5" : "border-zinc-100"}`}>
-                      {/* Price */}
-                      <div className="flex items-center flex-wrap gap-2">
-                        <span className={`text-xs font-black uppercase tracking-widest w-16 flex-shrink-0 ${darkMode ? "text-zinc-500" : "text-zinc-400"}`}>
-                          {language === "vi" ? "💰 Giá" : "💰 Price"}
-                        </span>
-                        {[{ label: language === "vi" ? "Tất cả" : "All", idx: -1 }, ...PRICE_RANGES.map((r, i) => ({ label: language === "vi" ? r.labelVi : r.labelEn, idx: i }))].map(({ label, idx }) => (
-                          <button
-                            key={idx}
-                            onClick={() => setPriceRangeIdx(idx)}
-                            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all border ${
-                              priceRangeIdx === idx
-                                ? "text-black border-transparent"
-                                : darkMode
-                                  ? "border-white/10 text-zinc-400 hover:text-white bg-white/5"
-                                  : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
-                            }`}
-                            style={priceRangeIdx === idx ? { background: "linear-gradient(135deg, #22d3ee, #a855f7)" } : {}}
-                          >{label}</button>
-                        ))}
-                      </div>
-                      {/* Color */}
-                      <div className="flex items-center flex-wrap gap-2">
-                        <span className={`text-xs font-black uppercase tracking-widest w-16 flex-shrink-0 ${darkMode ? "text-zinc-500" : "text-zinc-400"}`}>
-                          {language === "vi" ? "🎨 Màu" : "🎨 Color"}
-                        </span>
-                        <button
-                          onClick={() => setColorFilter("")}
-                          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all border ${
-                            colorFilter === ""
-                              ? "text-black border-transparent"
-                              : darkMode ? "border-white/10 text-zinc-400 hover:text-white bg-white/5" : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
-                          }`}
-                          style={colorFilter === "" ? { background: "linear-gradient(135deg, #22d3ee, #a855f7)" } : {}}
-                        >
-                          {language === "vi" ? "Tất cả" : "All"}
-                        </button>
-                        {PRODUCT_COLORS.map((c) => (
-                          <button
-                            key={c.value}
-                            onClick={() => setColorFilter(colorFilter === c.value ? "" : c.value)}
-                            title={language === "vi" ? c.labelVi : c.labelEn}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
-                              colorFilter === c.value
-                                ? darkMode ? "border-cyan-500/60 bg-cyan-500/10 text-cyan-300" : "border-cyan-400 bg-cyan-50 text-cyan-700"
-                                : darkMode ? "border-white/10 text-zinc-400 hover:text-white bg-white/5" : "border-zinc-200 text-zinc-500 hover:text-zinc-900 bg-white"
-                            }`}
-                          >
-                            <span className="w-3.5 h-3.5 rounded-full border border-white/20 flex-shrink-0" style={{ backgroundColor: c.hex }} />
-                            {language === "vi" ? c.labelVi : c.labelEn}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* Product grid */}
-            {loading ? (
-              <div className="flex items-center justify-center h-48">
-                <div className="w-10 h-10 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : productsPageFiltered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24 gap-4">
-                <PackageX className="w-16 h-16 text-zinc-600" />
-                <p className={`font-black text-xl ${darkMode ? "text-zinc-600" : "text-zinc-400"}`}>
-                  {language === "vi" ? "Không tìm thấy sản phẩm nào" : "No products found"}
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
-                {productsPageFiltered.map((product) => {
-                  const isHot = product.id % 5 < 2;
-                  const assignedColor = PRODUCT_COLORS[product.id % PRODUCT_COLORS.length];
-                  const isWishlisted = wishlist.has(product.id);
-                  return (
-                    <motion.div
-                      key={product.id}
-                      whileHover={{ y: -8, scale: 1.02 }}
-                      transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                      className="group relative rounded-2xl overflow-hidden cursor-pointer flex flex-col"
-                      style={
-                        darkMode
-                          ? {
-                              background: "linear-gradient(160deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))",
-                              border: "1px solid rgba(255,255,255,0.07)",
-                              backdropFilter: "blur(12px)",
-                            }
-                          : {
-                              background: "white",
-                              border: "1px solid rgba(0,0,0,0.07)",
-                              boxShadow: "0 4px 20px rgba(0,0,0,0.06)",
-                            }
-                      }
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.border = "1px solid rgba(139,92,246,0.5)";
-                        e.currentTarget.style.boxShadow = "0 8px 40px rgba(139,92,246,0.2), 0 0 0 1px rgba(139,92,246,0.1)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.border = darkMode ? "1px solid rgba(255,255,255,0.07)" : "1px solid rgba(0,0,0,0.07)";
-                        e.currentTarget.style.boxShadow = darkMode ? "none" : "0 4px 20px rgba(0,0,0,0.06)";
-                      }}
-                    >
-                      {/* Image area */}
-                      <div
-                        className={`relative overflow-hidden ${darkMode ? "bg-zinc-900" : "bg-zinc-100"}`}
-                        style={{ aspectRatio: "3/4" }}
-                      >
-                        <img
-                          src={product.image}
-                          alt={product.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                        />
-                        {/* gradient overlay */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-
-                        {/* HOT badge */}
-                        {isHot && product.stock > 0 && (
-                          <div
-                            className="absolute top-2.5 left-2.5 flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black text-white"
-                            style={{ background: "linear-gradient(135deg, #f97316, #ef4444)", boxShadow: "0 2px 8px rgba(239,68,68,0.4)" }}
-                          >
-                            <Flame className="w-3 h-3" /> HOT
-                          </div>
-                        )}
-
-                        {/* Color dot */}
-                        <div
-                          className="absolute top-2.5 right-9 w-3.5 h-3.5 rounded-full border border-white/60 shadow"
-                          style={{ backgroundColor: assignedColor.hex }}
-                          title={language === "vi" ? assignedColor.labelVi : assignedColor.labelEn}
-                        />
-
-                        {/* Wishlist button */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setWishlist((prev) => {
-                              const next = new Set(prev);
-                              next.has(product.id) ? next.delete(product.id) : next.add(product.id);
-                              return next;
-                            });
-                          }}
-                          className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center transition-all"
-                          style={
-                            isWishlisted
-                              ? { background: "rgba(239,68,68,0.9)", boxShadow: "0 2px 8px rgba(239,68,68,0.5)" }
-                              : { background: "rgba(0,0,0,0.35)", backdropFilter: "blur(4px)" }
-                          }
-                        >
-                          <Heart className="w-3 h-3" fill={isWishlisted ? "white" : "none"} stroke="white" strokeWidth={2.5} />
-                        </button>
-
-                        {/* Out of stock overlay */}
-                        {product.stock < 1 && (
-                          <div className="absolute inset-0 bg-black/65 flex items-center justify-center">
-                            <span className="text-red-400 font-black text-xs uppercase tracking-widest border border-red-400/40 px-2 py-0.5 rounded-lg">
-                              {language === "vi" ? "Hết hàng" : "Out of stock"}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Add to cart — slides up on hover */}
-                        <div className="absolute bottom-0 left-0 right-0 p-2.5 translate-y-full group-hover:translate-y-0 transition-transform duration-300">
-                          <button
-                            onClick={() => addToCart(product)}
-                            disabled={product.stock < 1}
-                            className="w-full py-2 rounded-xl font-black flex items-center justify-center gap-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed text-black"
-                            style={{ background: "linear-gradient(135deg, #22d3ee, #a855f7)" }}
-                          >
-                            <ShoppingCart className="w-3.5 h-3.5" />
-                            {language === "vi" ? "Thêm vào giỏ" : "Add to cart"}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Info */}
-                      <div className="p-3 flex flex-col gap-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: "#22d3ee" }}>
-                            {product.category}
-                          </span>
-                          <div className="flex items-center gap-0.5">
-                            {[1, 2, 3, 4, 5].map((s) => (
-                              <Star key={s} className="w-2.5 h-2.5" fill={s <= 4 ? "#eab308" : "none"} stroke="#eab308" strokeWidth={2} />
-                            ))}
-                          </div>
-                        </div>
-                        <h4 className={`font-bold text-sm leading-tight line-clamp-2 ${darkMode ? "text-white" : "text-zinc-900"}`}>
-                          {product.name}
-                        </h4>
-                        <div className="flex items-center justify-between mt-0.5">
-                          <p
-                            className="text-sm font-black"
-                            style={{ backgroundImage: "linear-gradient(135deg, #22d3ee, #a855f7)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}
-                          >
-                            {fmtVND(product.price)}
-                          </p>
-                          <span className={`text-[10px] font-medium ${product.stock > 0 ? "text-emerald-400" : "text-red-400"}`}>
-                            {product.stock > 0 ? `${product.stock} còn` : "Hết"}
-                          </span>
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ════ PROFILE (customer) ════ */}
-        {view === "profile" && currentUser && (
-          <div className="space-y-10">
-            <div
-              className="rounded-[40px] p-10 flex items-center gap-8 relative overflow-hidden"
-              style={{
-                background:
-                  "linear-gradient(135deg, rgba(139,92,246,0.15), rgba(6,182,212,0.1))",
-                border: "1px solid rgba(255,255,255,0.08)",
-              }}
-            >
-              <div
-                className="absolute inset-0"
-                style={{
-                  backgroundImage:
-                    "linear-gradient(rgba(139,92,246,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(139,92,246,0.05) 1px, transparent 1px)",
-                  backgroundSize: "40px 40px",
-                }}
-              />
-              <div
-                className="relative w-20 h-20 rounded-full flex items-center justify-center text-4xl font-black"
-                style={{
-                  background: "linear-gradient(135deg, #22d3ee, #a855f7)",
-                  boxShadow: "0 0 30px rgba(139,92,246,0.4)",
-                }}
-              >
-                {currentUser.name.charAt(0)}
-              </div>
-              <div className="relative">
-                <p className="text-zinc-400 text-sm font-bold uppercase tracking-widest mb-1">
-                  {t("profile.welcome")}
-                </p>
-                <h2 className="text-4xl font-black text-white">
-                  {currentUser.name}
-                </h2>
-                <p className="text-zinc-400 mt-1">
-                  {currentUser.email} ·{" "}
-                  <span
-                    className="font-bold uppercase"
-                    style={{ color: "#22d3ee" }}
-                  >
-                    {currentUser.role}
-                  </span>
-                </p>
-              </div>
-            </div>
-            <div>
-              <h3 className="text-2xl font-black mb-6 flex items-center gap-3">
-                <History className="w-6 h-6" style={{ color: "#22d3ee" }} />
-                <span
-                  style={{
-                    backgroundImage:
-                      "linear-gradient(135deg, #22d3ee, #a855f7)",
-                    WebkitBackgroundClip: "text",
-                    WebkitTextFillColor: "transparent",
-                  }}
-                >
-                  {t("profile.orderHistory")}
-                </span>
-              </h3>
-              {userOrders.length === 0 ? (
-                <div
-                  className="rounded-3xl p-16 text-center"
-                  style={{
-                    background: "rgba(255,255,255,0.03)",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                  }}
-                >
-                  <ShoppingCart
-                    className="w-16 h-16 mx-auto mb-4"
-                    style={{ color: "rgba(255,255,255,0.08)" }}
-                  />
-                  <p className="text-zinc-500 font-medium">
-                    {t("profile.noOrders")}
-                  </p>
-                  <button
-                    onClick={() => setView("shop")}
-                    className="mt-6 px-8 py-3 rounded-xl font-black text-black"
-                    style={{
-                      background: "linear-gradient(135deg, #22d3ee, #a855f7)",
-                    }}
-                  >
-                    {t("profile.goShop")}
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {userOrders.map((order) => {
-                    const items =
-                      typeof order.items === "string"
-                        ? (() => {
-                            try {
-                              return JSON.parse(order.items as string);
-                            } catch {
-                              return [];
-                            }
-                          })()
-                        : order.items || [];
-                    const statusSteps = [
-                      "PENDING",
-                      "CONFIRMED",
-                      "SHIPPING",
-                      "COMPLETED",
-                    ];
-                    const curStep = statusSteps.indexOf(order.status);
-                    const stepLabels: Record<string, string> = {
-                      PENDING: t("admin.statusPending"),
-                      CONFIRMED: t("admin.statusConfirmed"),
-                      SHIPPING: t("admin.statusShipping"),
-                      COMPLETED: t("admin.statusCompleted"),
-                    };
-                    return (
-                      <div
-                        key={order.id}
-                        className="rounded-3xl p-6 transition-all"
-                        style={{
-                          background: "rgba(255,255,255,0.03)",
-                          border: "1px solid rgba(255,255,255,0.08)",
-                        }}
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                          <div>
-                            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                              {t("profile.orderId")}
-                            </span>
-                            <p className="font-black text-xl">
-                              #{order.id.toString().padStart(4, "0")}
-                            </p>
-                          </div>
-                          <div>
-                            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                              {t("profile.orderDate")}
-                            </span>
-                            <p className="font-bold">
-                              {new Date(
-                                order.created_at || Date.now(),
-                              ).toLocaleDateString("vi-VN")}
-                            </p>
-                          </div>
-                          <div>
-                            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                              {t("profile.deliveryBy")}
-                            </span>
-                            <p
-                              className="font-bold"
-                              style={{ color: "#22d3ee" }}
-                            >
-                              {getDeliveryDate(order.created_at)}
-                            </p>
-                          </div>
-                          <div>
-                            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                              {t("profile.total")}
-                            </span>
-                            <p className="font-black text-xl">
-                              {fmtVND(order.total)}
-                            </p>
-                          </div>
-                          <span
-                            className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase ${statusColor[order.status] || "bg-zinc-100 text-zinc-600"}`}
-                          >
-                            {order.status}
-                          </span>
-                        </div>
-                        {items.length > 0 && (
-                          <div className="flex flex-wrap gap-3 pt-4 border-t border-white/10">
-                            {(items as any[]).map((item: any, i: number) => (
-                              <div
-                                key={i}
-                                className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"
-                              >
-                                <img
-                                  src={item.image}
-                                  className="w-8 h-8 rounded-lg object-cover"
-                                  alt={item.name}
-                                />
-                                <span className="text-sm font-bold text-white">
-                                  {item.name}
+                            <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                              <div>
+                                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                                  {t("profile.orderId")}
                                 </span>
+                                <p className="font-black text-xl">
+                                  #{order.id.toString().padStart(4, "0")}
+                                </p>
                               </div>
-                            ))}
-                          </div>
-                        )}
-                        {/* Delivery progress */}
-                        <div className="mt-4 pt-4 border-t border-white/10 flex items-center gap-1">
-                          {statusSteps.map((s, i) => (
-                            <React.Fragment key={s}>
-                              <div className="flex flex-col items-center">
-                                <div
-                                  className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${i <= curStep ? "text-black" : "bg-white/10 text-zinc-600"}`}
-                                  style={
-                                    i <= curStep
-                                      ? {
-                                          background:
-                                            "linear-gradient(135deg, #22d3ee, #a855f7)",
-                                        }
-                                      : {}
-                                  }
-                                >
-                                  {i + 1}
-                                </div>
-                                <span
-                                  className={`text-[9px] font-bold mt-1 ${i <= curStep ? "text-cyan-400" : "text-zinc-600"}`}
-                                >
-                                  {stepLabels[s]}
+                              <div>
+                                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                                  {t("profile.orderDate")}
                                 </span>
+                                <p className="font-bold">
+                                  {new Date(
+                                    order.created_at || Date.now(),
+                                  ).toLocaleDateString("vi-VN")}
+                                </p>
                               </div>
-                              {i < 3 && (
-                                <div
-                                  className={`h-1 w-10 rounded mb-4 ${i < curStep ? "bg-gradient-to-r from-cyan-400 to-purple-500" : "bg-white/10"}`}
-                                />
-                              )}
-                            </React.Fragment>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ════ ADMIN ════ */}
-        {view === "admin" && currentUser?.role === "admin" && (
-          <div className="space-y-10">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <h2 className="text-4xl font-black tracking-tighter">
-                {t("admin.dashboard")}
-              </h2>
-              <div className="flex gap-2 flex-wrap">
-                {(["overview", "products", "orders", "partners"] as const).map(
-                  (tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => setAdminTab(tab)}
-                      className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${adminTab === tab ? (darkMode ? "bg-white/15 text-white border border-white/20" : "bg-zinc-900 text-white") : darkMode ? "bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10 hover:text-white" : "bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50"}`}
-                    >
-                      {t(
-                        `admin.tab${tab.charAt(0).toUpperCase() + tab.slice(1)}`,
-                      )}
-                    </button>
-                  ),
-                )}
-                <button
-                  onClick={fetchData}
-                  className={`p-2.5 ${darkMode ? "bg-white/5 border-white/10 hover:bg-white/10 text-zinc-300" : "bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50"} border rounded-xl`}
-                >
-                  <RefreshCw className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {adminTab === "overview" && (
-              <div className="space-y-8">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                  {[
-                    {
-                      label: t("admin.totalRevenue"),
-                      value: fmtVND(stats?.totalSales || 0),
-                      icon: BarChart3,
-                      color: darkMode ? "text-emerald-400" : "text-emerald-600",
-                      bg: darkMode ? "bg-emerald-500/10" : "bg-emerald-50",
-                    },
-                    {
-                      label: t("admin.totalOrders"),
-                      value: stats?.orderCount || 0,
-                      icon: ShoppingCart,
-                      color: darkMode ? "text-blue-400" : "text-blue-600",
-                      bg: darkMode ? "bg-blue-500/10" : "bg-blue-50",
-                    },
-                    {
-                      label: t("admin.activeProducts"),
-                      value: stats?.productCount || 0,
-                      icon: Package,
-                      color: darkMode ? "text-purple-400" : "text-purple-600",
-                      bg: darkMode ? "bg-purple-500/10" : "bg-purple-50",
-                    },
-                    {
-                      label: t("admin.systemHealth"),
-                      value: "99.9%",
-                      icon: CheckCircle2,
-                      color: darkMode ? "text-zinc-300" : "text-zinc-600",
-                      bg: darkMode ? "bg-zinc-700/50" : "bg-zinc-50",
-                    },
-                  ].map((s) => (
-                    <div
-                      key={s.label}
-                      className={`p-8 rounded-[32px] border ${darkMode ? "bg-zinc-800/50 border-white/8" : "bg-white border-zinc-200 shadow-sm"}`}
-                    >
-                      <div
-                        className={`${s.bg} ${s.color} w-12 h-12 rounded-2xl flex items-center justify-center mb-6`}
-                      >
-                        <s.icon className="w-6 h-6" />
-                      </div>
-                      <p
-                        className={`${darkMode ? "text-zinc-400" : "text-zinc-500"} font-bold text-sm uppercase tracking-widest mb-1`}
-                      >
-                        {s.label}
-                      </p>
-                      <p className="text-3xl font-black">{String(s.value)}</p>
-                    </div>
-                  ))}
-                </div>
-                <div
-                  className={`p-8 rounded-[40px] border h-[360px] ${darkMode ? "bg-zinc-800/40 border-white/8" : "bg-white border-zinc-200 shadow-sm"}`}
-                >
-                  <h3 className="text-xl font-black mb-8">
-                    {t("admin.revenueTrend")}
-                  </h3>
-                  <ResponsiveContainer width="100%" height="80%">
-                    <AreaChart data={stats?.dailySales || []}>
-                      <defs>
-                        <linearGradient id="ga" x1="0" y1="0" x2="0" y2="1">
-                          <stop
-                            offset="5%"
-                            stopColor="#10b981"
-                            stopOpacity={0.3}
-                          />
-                          <stop
-                            offset="95%"
-                            stopColor="#10b981"
-                            stopOpacity={0}
-                          />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        vertical={false}
-                        stroke={darkMode ? "rgba(255,255,255,0.06)" : "#f1f5f9"}
-                      />
-                      <XAxis
-                        dataKey="date"
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fill: "#94a3b8", fontSize: 12 }}
-                        dy={10}
-                      />
-                      <YAxis
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fill: "#94a3b8", fontSize: 12 }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          borderRadius: "16px",
-                          border: "none",
-                          boxShadow: "0 10px 15px -3px rgb(0 0 0 / 0.1)",
-                        }}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="amount"
-                        stroke="#10b981"
-                        strokeWidth={4}
-                        fillOpacity={1}
-                        fill="url(#ga)"
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            )}
-
-            {adminTab === "products" && (
-              <div className="space-y-6">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-2xl font-black">
-                    {t("admin.productMgmt")}
-                  </h3>
-                  <button
-                    onClick={() => openEdit()}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all"
-                  >
-                    <Plus className="w-4 h-4" />
-                    {t("admin.addProduct")}
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {products.map((p) => (
-                    <div
-                      key={p.id}
-                      className={`rounded-3xl border overflow-hidden transition-all ${darkMode ? "bg-zinc-800/50 border-white/8 hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(139,92,246,0.12)]" : "bg-white border-zinc-200 shadow-sm hover:shadow-lg"}`}
-                    >
-                      <img
-                        src={p.image}
-                        className="w-full h-40 object-cover"
-                        alt={p.name}
-                      />
-                      <div className="p-5">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">
-                          {p.category}
-                        </span>
-                        <h4 className="font-black text-lg mt-1 mb-1">
-                          {p.name}
-                        </h4>
-                        <p
-                          className={`text-xl font-black ${darkMode ? "" : "text-zinc-900"} mb-1`}
-                        >
-                          {fmtVND(p.price)}
-                        </p>
-                        <p className="text-xs text-zinc-400 mb-4">
-                          {t("admin.productStock")}: {p.stock}
-                        </p>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => openEdit(p)}
-                            className={`flex-1 flex items-center justify-center gap-1 py-2 ${darkMode ? "bg-white/10 hover:bg-white/15 text-zinc-200" : "bg-zinc-100 hover:bg-zinc-200 text-zinc-800"} rounded-xl font-bold text-sm`}
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                            {t("common.edit")}
-                          </button>
-                          <button
-                            onClick={() => handleDelProd(p.id)}
-                            className="flex-1 flex items-center justify-center gap-1 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-bold text-sm"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            {t("common.delete")}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {adminTab === "orders" && (
-              <div
-                className={`rounded-[40px] border overflow-hidden ${darkMode ? "bg-zinc-800/40 border-white/8" : "bg-white border-zinc-200 shadow-sm"}`}
-              >
-                <div
-                  className={`p-8 border-b ${darkMode ? "border-white/8" : "border-zinc-100"}`}
-                >
-                  <h3 className="text-xl font-black">
-                    {t("admin.recentOrders")}
-                  </h3>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead
-                      className={`text-[10px] font-black uppercase tracking-[0.2em] ${darkMode ? "bg-white/5 text-zinc-500" : "bg-zinc-50 text-zinc-400"}`}
-                    >
-                      <tr>
-                        {[
-                          t("admin.orderId"),
-                          t("admin.customer"),
-                          t("admin.total"),
-                          t("admin.status"),
-                          t("admin.actions"),
-                        ].map((h) => (
-                          <th key={h} className="px-8 py-5">
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody
-                      className={`divide-y ${darkMode ? "divide-white/5" : "divide-zinc-100"}`}
-                    >
-                      {orders.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={5}
-                            className="px-8 py-16 text-center text-zinc-400 font-medium"
-                          >
-                            {t("admin.noOrders")}
-                          </td>
-                        </tr>
-                      ) : (
-                        orders.map((order) => (
-                          <tr
-                            key={order.id}
-                            className={`transition-colors ${darkMode ? "hover:bg-white/3" : "hover:bg-zinc-50/50"}`}
-                          >
-                            <td className="px-8 py-6 font-mono font-bold text-zinc-400">
-                              #{order.id.toString().padStart(4, "0")}
-                            </td>
-                            <td className="px-8 py-6">
-                              <div className="font-bold">
-                                {order.customer_name}
+                              <div>
+                                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                                  {t("profile.deliveryBy")}
+                                </span>
+                                <p
+                                  className="font-bold"
+                                  style={{ color: "#22d3ee" }}
+                                >
+                                  {getDeliveryDate(order.created_at)}
+                                </p>
                               </div>
-                              <div className="text-xs text-zinc-400">
-                                {order.customer_email}
+                              <div>
+                                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                                  {t("profile.total")}
+                                </span>
+                                <p className="font-black text-xl">
+                                  {fmtVND(order.total)}
+                                </p>
                               </div>
-                            </td>
-                            <td className="px-8 py-6 font-black">
-                              {fmtVND(order.total)}
-                            </td>
-                            <td className="px-8 py-6">
                               <span
-                                className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase ${statusColor[order.status] || ""}`}
+                                className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase ${statusColor[order.status] || "bg-zinc-100 text-zinc-600"}`}
                               >
                                 {order.status}
                               </span>
-                            </td>
-                            <td className="px-8 py-6">
-                              <div className="flex gap-2">
-                                {order.status === "PENDING" && (
-                                  <button
-                                    onClick={() =>
-                                      updateOrderStatus(order.id, "CONFIRMED")
-                                    }
-                                    title="Confirm"
-                                    className="p-2 bg-zinc-900 text-white rounded-lg hover:bg-emerald-600 transition-all"
-                                  >
-                                    <CheckCircle2 className="w-4 h-4" />
-                                  </button>
-                                )}
-                                {order.status === "CONFIRMED" && (
-                                  <button
-                                    onClick={() =>
-                                      updateOrderStatus(order.id, "SHIPPING")
-                                    }
-                                    title="Ship"
-                                    className="p-2 bg-zinc-900 text-white rounded-lg hover:bg-blue-600 transition-all"
-                                  >
-                                    <Truck className="w-4 h-4" />
-                                  </button>
-                                )}
-                                {order.status === "SHIPPING" && (
-                                  <button
-                                    onClick={() =>
-                                      updateOrderStatus(order.id, "COMPLETED")
-                                    }
-                                    title="Done"
-                                    className="p-2 bg-zinc-900 text-white rounded-lg hover:bg-emerald-600 transition-all"
-                                  >
-                                    <Package className="w-4 h-4" />
-                                  </button>
+                            </div>
+                            {items.length > 0 && (
+                              <div className="flex flex-wrap gap-3 pt-4 border-t border-white/10">
+                                {(items as any[]).map(
+                                  (item: any, i: number) => (
+                                    <div
+                                      key={i}
+                                      className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"
+                                    >
+                                      <img
+                                        src={item.image}
+                                        className="w-8 h-8 rounded-lg object-cover"
+                                        alt={item.name}
+                                      />
+                                      <span className="text-sm font-bold text-white">
+                                        {item.name}
+                                      </span>
+                                    </div>
+                                  ),
                                 )}
                               </div>
+                            )}
+                            {/* Delivery progress */}
+                            <div className="mt-4 pt-4 border-t border-white/10 flex items-center gap-1">
+                              {statusSteps.map((s, i) => (
+                                <React.Fragment key={s}>
+                                  <div className="flex flex-col items-center">
+                                    <div
+                                      className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${i <= curStep ? "text-black" : "bg-white/10 text-zinc-600"}`}
+                                      style={
+                                        i <= curStep
+                                          ? {
+                                              background:
+                                                "linear-gradient(135deg, #22d3ee, #a855f7)",
+                                            }
+                                          : {}
+                                      }
+                                    >
+                                      {i + 1}
+                                    </div>
+                                    <span
+                                      className={`text-[9px] font-bold mt-1 ${i <= curStep ? "text-cyan-400" : "text-zinc-600"}`}
+                                    >
+                                      {stepLabels[s]}
+                                    </span>
+                                  </div>
+                                  {i < 3 && (
+                                    <div
+                                      className={`h-1 w-10 rounded mb-4 ${i < curStep ? "bg-gradient-to-r from-cyan-400 to-purple-500" : "bg-white/10"}`}
+                                    />
+                                  )}
+                                </React.Fragment>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ════ ADMIN ════ */}
+            {view === "admin" && currentUser?.role === "admin" && (
+              <div className="space-y-10">
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <h2 className="text-4xl font-black tracking-tighter">
+                    {t("admin.dashboard")}
+                  </h2>
+                  <div className="flex gap-2 flex-wrap">
+                    {(
+                      ["overview", "products", "orders", "partners"] as const
+                    ).map((tab) => (
+                      <button
+                        key={tab}
+                        onClick={() => setAdminTab(tab)}
+                        className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${adminTab === tab ? (darkMode ? "bg-white/15 text-white border border-white/20" : "bg-zinc-900 text-white") : darkMode ? "bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10 hover:text-white" : "bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50"}`}
+                      >
+                        {t(
+                          `admin.tab${tab.charAt(0).toUpperCase() + tab.slice(1)}`,
+                        )}
+                      </button>
+                    ))}
+                    <button
+                      onClick={fetchData}
+                      className={`p-2.5 ${darkMode ? "bg-white/5 border-white/10 hover:bg-white/10 text-zinc-300" : "bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50"} border rounded-xl`}
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {adminTab === "overview" && (
+                  <div className="space-y-8">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                      {[
+                        {
+                          label: t("admin.totalRevenue"),
+                          value: fmtVND(stats?.totalSales || 0),
+                          icon: BarChart3,
+                          color: darkMode
+                            ? "text-emerald-400"
+                            : "text-emerald-600",
+                          bg: darkMode ? "bg-emerald-500/10" : "bg-emerald-50",
+                        },
+                        {
+                          label: t("admin.totalOrders"),
+                          value: stats?.orderCount || 0,
+                          icon: ShoppingCart,
+                          color: darkMode ? "text-blue-400" : "text-blue-600",
+                          bg: darkMode ? "bg-blue-500/10" : "bg-blue-50",
+                        },
+                        {
+                          label: t("admin.activeProducts"),
+                          value: stats?.productCount || 0,
+                          icon: Package,
+                          color: darkMode
+                            ? "text-purple-400"
+                            : "text-purple-600",
+                          bg: darkMode ? "bg-purple-500/10" : "bg-purple-50",
+                        },
+                        {
+                          label: t("admin.systemHealth"),
+                          value: "99.9%",
+                          icon: CheckCircle2,
+                          color: darkMode ? "text-zinc-300" : "text-zinc-600",
+                          bg: darkMode ? "bg-zinc-700/50" : "bg-zinc-50",
+                        },
+                      ].map((s) => (
+                        <div
+                          key={s.label}
+                          className={`p-8 rounded-[32px] border ${darkMode ? "bg-zinc-800/50 border-white/8" : "bg-white border-zinc-200 shadow-sm"}`}
+                        >
+                          <div
+                            className={`${s.bg} ${s.color} w-12 h-12 rounded-2xl flex items-center justify-center mb-6`}
+                          >
+                            <s.icon className="w-6 h-6" />
+                          </div>
+                          <p
+                            className={`${darkMode ? "text-zinc-400" : "text-zinc-500"} font-bold text-sm uppercase tracking-widest mb-1`}
+                          >
+                            {s.label}
+                          </p>
+                          <p className="text-3xl font-black">
+                            {String(s.value)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    <div
+                      className={`p-8 rounded-[40px] border h-[360px] ${darkMode ? "bg-zinc-800/40 border-white/8" : "bg-white border-zinc-200 shadow-sm"}`}
+                    >
+                      <h3 className="text-xl font-black mb-8">
+                        {t("admin.revenueTrend")}
+                      </h3>
+                      <ResponsiveContainer width="100%" height="80%">
+                        <AreaChart data={stats?.dailySales || []}>
+                          <defs>
+                            <linearGradient id="ga" x1="0" y1="0" x2="0" y2="1">
+                              <stop
+                                offset="5%"
+                                stopColor="#10b981"
+                                stopOpacity={0.3}
+                              />
+                              <stop
+                                offset="95%"
+                                stopColor="#10b981"
+                                stopOpacity={0}
+                              />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            vertical={false}
+                            stroke={
+                              darkMode ? "rgba(255,255,255,0.06)" : "#f1f5f9"
+                            }
+                          />
+                          <XAxis
+                            dataKey="date"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: "#94a3b8", fontSize: 12 }}
+                            dy={10}
+                          />
+                          <YAxis
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: "#94a3b8", fontSize: 12 }}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              borderRadius: "16px",
+                              border: "none",
+                              boxShadow: "0 10px 15px -3px rgb(0 0 0 / 0.1)",
+                            }}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="amount"
+                            stroke="#10b981"
+                            strokeWidth={4}
+                            fillOpacity={1}
+                            fill="url(#ga)"
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
+
+                {adminTab === "products" && (
+                  <div className="space-y-6">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-2xl font-black">
+                        {t("admin.productMgmt")}
+                      </h3>
+                      <button
+                        onClick={() => openEdit()}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all"
+                      >
+                        <Plus className="w-4 h-4" />
+                        {t("admin.addProduct")}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                      {products.map((p) => (
+                        <div
+                          key={p.id}
+                          className={`rounded-3xl border overflow-hidden transition-all ${darkMode ? "bg-zinc-800/50 border-white/8 hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(139,92,246,0.12)]" : "bg-white border-zinc-200 shadow-sm hover:shadow-lg"}`}
+                        >
+                          <img
+                            src={p.image}
+                            className="w-full h-40 object-cover"
+                            alt={p.name}
+                          />
+                          <div className="p-5">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">
+                              {p.category}
+                            </span>
+                            <h4 className="font-black text-lg mt-1 mb-1">
+                              {p.name}
+                            </h4>
+                            <p
+                              className={`text-xl font-black ${darkMode ? "" : "text-zinc-900"} mb-1`}
+                            >
+                              {fmtVND(p.price)}
+                            </p>
+                            <p className="text-xs text-zinc-400 mb-4">
+                              {t("admin.productStock")}: {p.stock}
+                            </p>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => openEdit(p)}
+                                className={`flex-1 flex items-center justify-center gap-1 py-2 ${darkMode ? "bg-white/10 hover:bg-white/15 text-zinc-200" : "bg-zinc-100 hover:bg-zinc-200 text-zinc-800"} rounded-xl font-bold text-sm`}
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                                {t("common.edit")}
+                              </button>
+                              <button
+                                onClick={() => handleDelProd(p.id)}
+                                className="flex-1 flex items-center justify-center gap-1 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-bold text-sm"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                {t("common.delete")}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {adminTab === "orders" && (
+                  <div
+                    className={`rounded-[40px] border overflow-hidden ${darkMode ? "bg-zinc-800/40 border-white/8" : "bg-white border-zinc-200 shadow-sm"}`}
+                  >
+                    <div
+                      className={`p-8 border-b ${darkMode ? "border-white/8" : "border-zinc-100"}`}
+                    >
+                      <h3 className="text-xl font-black">
+                        {t("admin.recentOrders")}
+                      </h3>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead
+                          className={`text-[10px] font-black uppercase tracking-[0.2em] ${darkMode ? "bg-white/5 text-zinc-500" : "bg-zinc-50 text-zinc-400"}`}
+                        >
+                          <tr>
+                            {[
+                              t("admin.orderId"),
+                              t("admin.customer"),
+                              t("admin.total"),
+                              t("admin.status"),
+                              t("admin.actions"),
+                            ].map((h) => (
+                              <th key={h} className="px-8 py-5">
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody
+                          className={`divide-y ${darkMode ? "divide-white/5" : "divide-zinc-100"}`}
+                        >
+                          {orders.length === 0 ? (
+                            <tr>
+                              <td
+                                colSpan={5}
+                                className="px-8 py-16 text-center text-zinc-400 font-medium"
+                              >
+                                {t("admin.noOrders")}
+                              </td>
+                            </tr>
+                          ) : (
+                            orders.map((order) => (
+                              <tr
+                                key={order.id}
+                                className={`transition-colors ${darkMode ? "hover:bg-white/3" : "hover:bg-zinc-50/50"}`}
+                              >
+                                <td className="px-8 py-6 font-mono font-bold text-zinc-400">
+                                  #{order.id.toString().padStart(4, "0")}
+                                </td>
+                                <td className="px-8 py-6">
+                                  <div className="font-bold">
+                                    {order.customer_name}
+                                  </div>
+                                  <div className="text-xs text-zinc-400">
+                                    {order.customer_email}
+                                  </div>
+                                </td>
+                                <td className="px-8 py-6 font-black">
+                                  {fmtVND(order.total)}
+                                </td>
+                                <td className="px-8 py-6">
+                                  <span
+                                    className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase ${statusColor[order.status] || ""}`}
+                                  >
+                                    {order.status}
+                                  </span>
+                                </td>
+                                <td className="px-8 py-6">
+                                  <div className="flex gap-2">
+                                    {order.status === "PENDING" && (
+                                      <button
+                                        onClick={() =>
+                                          updateOrderStatus(
+                                            order.id,
+                                            "CONFIRMED",
+                                          )
+                                        }
+                                        title="Confirm"
+                                        className="p-2 bg-zinc-900 text-white rounded-lg hover:bg-emerald-600 transition-all"
+                                      >
+                                        <CheckCircle2 className="w-4 h-4" />
+                                      </button>
+                                    )}
+                                    {order.status === "CONFIRMED" && (
+                                      <button
+                                        onClick={() =>
+                                          updateOrderStatus(
+                                            order.id,
+                                            "SHIPPING",
+                                          )
+                                        }
+                                        title="Ship"
+                                        className="p-2 bg-zinc-900 text-white rounded-lg hover:bg-blue-600 transition-all"
+                                      >
+                                        <Truck className="w-4 h-4" />
+                                      </button>
+                                    )}
+                                    {order.status === "SHIPPING" && (
+                                      <button
+                                        onClick={() =>
+                                          updateOrderStatus(
+                                            order.id,
+                                            "COMPLETED",
+                                          )
+                                        }
+                                        title="Done"
+                                        className="p-2 bg-zinc-900 text-white rounded-lg hover:bg-emerald-600 transition-all"
+                                      >
+                                        <Package className="w-4 h-4" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {adminTab === "partners" && (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-2xl font-black">
+                        {t("admin.partnerMgmt")}
+                      </h3>
+                      <p className="text-zinc-500 mt-1">
+                        {t("admin.partnerDesc")}
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {partners.map((p) => (
+                        <div
+                          key={p.id}
+                          className={`rounded-3xl border p-6 transition-all ${darkMode ? "bg-zinc-800/50 border-white/8 hover:border-cyan-500/30" : "bg-white border-zinc-200 shadow-sm hover:shadow-md"}`}
+                        >
+                          <div className="flex items-start justify-between mb-4">
+                            <div>
+                              <h4 className="font-black text-xl">{p.name}</h4>
+                              <p className="text-zinc-400 text-sm">{p.email}</p>
+                            </div>
+                            <span
+                              className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${statusColor[p.status] || "bg-zinc-100 text-zinc-600"}`}
+                            >
+                              {t(`admin.${p.status.toLowerCase()}`)}
+                            </span>
+                          </div>
+                          <div className="flex gap-3 text-sm text-zinc-500 mb-5">
+                            <span className="font-bold text-zinc-700 bg-zinc-100 px-2 py-1 rounded-lg">
+                              {p.category}
+                            </span>
+                            <span>📅 {p.joinDate}</span>
+                            <span className="flex items-center gap-1">
+                              <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                              {p.rating}
+                            </span>
+                          </div>
+                          {p.status === "PENDING" && (
+                            <div className="flex gap-3">
+                              <button
+                                onClick={() => handlePartner(p.id, "APPROVED")}
+                                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all text-sm"
+                              >
+                                <UserCheck className="w-4 h-4" />
+                                {t("admin.approve")}
+                              </button>
+                              <button
+                                onClick={() => handlePartner(p.id, "REJECTED")}
+                                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-50 text-red-600 rounded-xl font-bold hover:bg-red-100 transition-all text-sm"
+                              >
+                                <UserX className="w-4 h-4" />
+                                {t("admin.reject")}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Admin blocked */}
+            {view === "admin" && currentUser?.role !== "admin" && (
+              <div className="flex flex-col items-center justify-center h-64 text-center space-y-4">
+                <Lock className="w-16 h-16 text-zinc-300" />
+                <h3 className="text-2xl font-black text-zinc-400">
+                  Chỉ Admin mới có thể truy cập
+                </h3>
+                <button
+                  onClick={() => setIsLoginOpen(true)}
+                  className="px-6 py-3 bg-zinc-900 text-white rounded-xl font-bold hover:bg-emerald-600 transition-all"
+                >
+                  {t("nav.login")}
+                </button>
+              </div>
+            )}
+
+            {/* ════ DEBUG ════ */}
+            {view === "debug" && (
+              <div className="space-y-8">
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <div>
+                    <h2 className="text-4xl font-black tracking-tighter">
+                      {t("debug.title")}
+                    </h2>
+                    <p className="text-zinc-500 font-medium mt-2">
+                      {t("debug.subtitle")}
+                    </p>
+                  </div>
+                  <div className="flex gap-3 flex-wrap">
+                    <button
+                      onClick={async () => {
+                        const r = await fetch("/api/seed", { method: "POST" });
+                        const d = await r.json();
+                        alert(r.ok ? d.message : d.error);
+                        fetchData();
+                      }}
+                      className="flex items-center gap-2 px-5 py-3 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700"
+                    >
+                      <Database className="w-4 h-4" />
+                      {t("debug.seedData")}
+                    </button>
+                    <button
+                      onClick={fetchData}
+                      className="flex items-center gap-2 px-5 py-3 bg-white border border-zinc-200 rounded-2xl font-bold hover:bg-zinc-50"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      {t("debug.refresh")}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await fetch("/api/logs/clear", { method: "POST" });
+                        fetchData();
+                      }}
+                      className="flex items-center gap-2 px-5 py-3 bg-red-50 text-red-600 border border-red-100 rounded-2xl font-bold hover:bg-red-100"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      {t("debug.purgeLogs")}
+                    </button>
+                  </div>
+                </div>
+                <div className="bg-zinc-900 rounded-[40px] p-8 shadow-2xl border border-white/5">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 border-b border-white/10">
+                        <tr>
+                          {[
+                            t("debug.timestamp"),
+                            t("debug.source"),
+                            t("debug.level"),
+                            t("debug.message"),
+                          ].map((h) => (
+                            <th key={h} className="px-6 py-4">
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {logs.map((log) => (
+                          <tr
+                            key={log.id}
+                            className="hover:bg-white/5 transition-colors"
+                          >
+                            <td className="px-6 py-5 font-mono text-xs text-zinc-500">
+                              {new Date(log.timestamp).toLocaleTimeString()}
+                            </td>
+                            <td className="px-6 py-5">
+                              <span
+                                className={`px-2 py-1 rounded text-[10px] font-black ${log.source === "FE" ? "bg-blue-500/20 text-blue-400" : log.source === "BE" ? "bg-purple-500/20 text-purple-400" : "bg-amber-500/20 text-amber-400"}`}
+                              >
+                                {log.source}
+                              </span>
+                            </td>
+                            <td className="px-6 py-5">
+                              <span
+                                className={`font-black text-xs ${log.level === "ERROR" ? "text-red-400" : "text-zinc-400"}`}
+                              >
+                                {log.level}
+                              </span>
+                            </td>
+                            <td className="px-6 py-5">
+                              <div className="text-zinc-300 font-medium text-sm">
+                                {log.message}
+                              </div>
+                              {log.details && (
+                                <pre className="mt-2 p-3 bg-black/50 rounded-xl text-[10px] text-zinc-500 font-mono overflow-x-auto max-w-2xl">
+                                  {log.details}
+                                </pre>
+                              )}
                             </td>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}
-
-            {adminTab === "partners" && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-2xl font-black">
-                    {t("admin.partnerMgmt")}
-                  </h3>
-                  <p className="text-zinc-500 mt-1">{t("admin.partnerDesc")}</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {partners.map((p) => (
-                    <div
-                      key={p.id}
-                      className={`rounded-3xl border p-6 transition-all ${darkMode ? "bg-zinc-800/50 border-white/8 hover:border-cyan-500/30" : "bg-white border-zinc-200 shadow-sm hover:shadow-md"}`}
-                    >
-                      <div className="flex items-start justify-between mb-4">
-                        <div>
-                          <h4 className="font-black text-xl">{p.name}</h4>
-                          <p className="text-zinc-400 text-sm">{p.email}</p>
-                        </div>
-                        <span
-                          className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${statusColor[p.status] || "bg-zinc-100 text-zinc-600"}`}
-                        >
-                          {t(`admin.${p.status.toLowerCase()}`)}
-                        </span>
-                      </div>
-                      <div className="flex gap-3 text-sm text-zinc-500 mb-5">
-                        <span className="font-bold text-zinc-700 bg-zinc-100 px-2 py-1 rounded-lg">
-                          {p.category}
-                        </span>
-                        <span>📅 {p.joinDate}</span>
-                        <span className="flex items-center gap-1">
-                          <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                          {p.rating}
-                        </span>
-                      </div>
-                      {p.status === "PENDING" && (
-                        <div className="flex gap-3">
-                          <button
-                            onClick={() => handlePartner(p.id, "APPROVED")}
-                            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all text-sm"
-                          >
-                            <UserCheck className="w-4 h-4" />
-                            {t("admin.approve")}
-                          </button>
-                          <button
-                            onClick={() => handlePartner(p.id, "REJECTED")}
-                            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-50 text-red-600 rounded-xl font-bold hover:bg-red-100 transition-all text-sm"
-                          >
-                            <UserX className="w-4 h-4" />
-                            {t("admin.reject")}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Admin blocked */}
-        {view === "admin" && currentUser?.role !== "admin" && (
-          <div className="flex flex-col items-center justify-center h-64 text-center space-y-4">
-            <Lock className="w-16 h-16 text-zinc-300" />
-            <h3 className="text-2xl font-black text-zinc-400">
-              Chỉ Admin mới có thể truy cập
-            </h3>
-            <button
-              onClick={() => setIsLoginOpen(true)}
-              className="px-6 py-3 bg-zinc-900 text-white rounded-xl font-bold hover:bg-emerald-600 transition-all"
-            >
-              {t("nav.login")}
-            </button>
-          </div>
-        )}
-
-        {/* ════ DEBUG ════ */}
-        {view === "debug" && (
-          <div className="space-y-8">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <div>
-                <h2 className="text-4xl font-black tracking-tighter">
-                  {t("debug.title")}
-                </h2>
-                <p className="text-zinc-500 font-medium mt-2">
-                  {t("debug.subtitle")}
-                </p>
-              </div>
-              <div className="flex gap-3 flex-wrap">
-                <button
-                  onClick={async () => {
-                    const r = await fetch("/api/seed", { method: "POST" });
-                    const d = await r.json();
-                    alert(r.ok ? d.message : d.error);
-                    fetchData();
-                  }}
-                  className="flex items-center gap-2 px-5 py-3 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700"
-                >
-                  <Database className="w-4 h-4" />
-                  {t("debug.seedData")}
-                </button>
-                <button
-                  onClick={fetchData}
-                  className="flex items-center gap-2 px-5 py-3 bg-white border border-zinc-200 rounded-2xl font-bold hover:bg-zinc-50"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  {t("debug.refresh")}
-                </button>
-                <button
-                  onClick={async () => {
-                    await fetch("/api/logs/clear", { method: "POST" });
-                    fetchData();
-                  }}
-                  className="flex items-center gap-2 px-5 py-3 bg-red-50 text-red-600 border border-red-100 rounded-2xl font-bold hover:bg-red-100"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  {t("debug.purgeLogs")}
-                </button>
-              </div>
-            </div>
-            <div className="bg-zinc-900 rounded-[40px] p-8 shadow-2xl border border-white/5">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 border-b border-white/10">
-                    <tr>
-                      {[
-                        t("debug.timestamp"),
-                        t("debug.source"),
-                        t("debug.level"),
-                        t("debug.message"),
-                      ].map((h) => (
-                        <th key={h} className="px-6 py-4">
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {logs.map((log) => (
-                      <tr
-                        key={log.id}
-                        className="hover:bg-white/5 transition-colors"
-                      >
-                        <td className="px-6 py-5 font-mono text-xs text-zinc-500">
-                          {new Date(log.timestamp).toLocaleTimeString()}
-                        </td>
-                        <td className="px-6 py-5">
-                          <span
-                            className={`px-2 py-1 rounded text-[10px] font-black ${log.source === "FE" ? "bg-blue-500/20 text-blue-400" : log.source === "BE" ? "bg-purple-500/20 text-purple-400" : "bg-amber-500/20 text-amber-400"}`}
-                          >
-                            {log.source}
-                          </span>
-                        </td>
-                        <td className="px-6 py-5">
-                          <span
-                            className={`font-black text-xs ${log.level === "ERROR" ? "text-red-400" : "text-zinc-400"}`}
-                          >
-                            {log.level}
-                          </span>
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="text-zinc-300 font-medium text-sm">
-                            {log.message}
-                          </div>
-                          {log.details && (
-                            <pre className="mt-2 p-3 bg-black/50 rounded-xl text-[10px] text-zinc-500 font-mono overflow-x-auto max-w-2xl">
-                              {log.details}
-                            </pre>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
+          </motion.div>
+        </AnimatePresence>
       </main>
 
       {/* ── CART DRAWER ── */}
@@ -2064,30 +2694,34 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed right-0 top-0 h-full w-full max-w-md bg-white z-[70] shadow-2xl flex flex-col"
+              className={`fixed right-0 top-0 h-full w-full max-w-md z-[70] shadow-2xl flex flex-col ${darkMode ? "bg-zinc-900 text-white" : "bg-white text-zinc-900"}`}
             >
-              <div className="p-8 border-b border-zinc-100 flex items-center justify-between">
+              <div
+                className={`p-8 border-b flex items-center justify-between ${darkMode ? "border-white/10" : "border-zinc-100"}`}
+              >
                 <h3 className="text-2xl font-black tracking-tighter">
                   {t("cart.title")}
                 </h3>
                 <button
                   onClick={() => setIsCartOpen(false)}
-                  className="p-2 hover:bg-zinc-100 rounded-full"
+                  className={`p-2 rounded-full transition-all ${darkMode ? "hover:bg-white/10" : "hover:bg-zinc-100"}`}
                 >
                   <X className="w-6 h-6" />
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto p-8 space-y-4">
                 {cart.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-zinc-300 space-y-4">
-                    <ShoppingCart className="w-24 h-24 opacity-10" />
+                  <div
+                    className={`h-full flex flex-col items-center justify-center space-y-4 ${darkMode ? "text-zinc-600" : "text-zinc-300"}`}
+                  >
+                    <ShoppingCart className="w-24 h-24 opacity-30" />
                     <p className="font-bold text-lg">{t("cart.empty")}</p>
                   </div>
                 ) : (
                   cart.map((item, idx) => (
                     <div
                       key={idx}
-                      className="flex gap-4 items-center p-4 bg-zinc-50 rounded-3xl border border-zinc-100"
+                      className={`flex gap-4 items-center p-4 rounded-3xl border ${darkMode ? "bg-white/5 border-white/10" : "bg-zinc-50 border-zinc-100"}`}
                     >
                       <img
                         src={item.image}
@@ -2095,8 +2729,12 @@ export default function App() {
                         alt={item.name}
                       />
                       <div className="flex-1">
-                        <h4 className="font-bold">{item.name}</h4>
-                        <p className="text-emerald-600 font-black">
+                        <h4
+                          className={`font-bold ${darkMode ? "text-white" : "text-zinc-900"}`}
+                        >
+                          {item.name}
+                        </h4>
+                        <p className="text-emerald-500 font-black">
                           {fmtVND(item.price)}
                         </p>
                       </div>
@@ -2104,7 +2742,7 @@ export default function App() {
                         onClick={() =>
                           setCart(cart.filter((_, i) => i !== idx))
                         }
-                        className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                        className={`p-2 rounded-xl transition-all ${darkMode ? "text-zinc-500 hover:text-red-400 hover:bg-red-400/10" : "text-zinc-400 hover:text-red-500 hover:bg-red-50"}`}
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -2112,10 +2750,16 @@ export default function App() {
                   ))
                 )}
               </div>
-              <div className="p-8 border-t border-zinc-100 bg-zinc-50 space-y-4">
-                <div className="flex items-center justify-between text-2xl font-black">
+              <div
+                className={`p-8 border-t space-y-4 ${darkMode ? "border-white/10 bg-zinc-800/50" : "border-zinc-100 bg-zinc-50"}`}
+              >
+                <div
+                  className={`flex items-center justify-between text-2xl font-black ${darkMode ? "text-white" : "text-zinc-900"}`}
+                >
                   <span>{t("cart.total")}</span>
-                  <span>{fmtVND(cartTotal)}</span>
+                  <span className="bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">
+                    {fmtVND(cartTotal)}
+                  </span>
                 </div>
                 <button
                   disabled={cart.length === 0}
@@ -2123,7 +2767,10 @@ export default function App() {
                     setIsCartOpen(false);
                     setIsCheckoutOpen(true);
                   }}
-                  className="w-full bg-zinc-900 text-white py-6 rounded-[24px] font-black text-lg hover:bg-emerald-600 transition-all disabled:opacity-50 shadow-xl"
+                  className="w-full text-white py-6 rounded-[24px] font-black text-lg hover:opacity-90 transition-all disabled:opacity-40 shadow-xl"
+                  style={{
+                    background: "linear-gradient(135deg, #22d3ee, #a855f7)",
+                  }}
                 >
                   {t("cart.proceed")}
                 </button>
@@ -2750,6 +3397,139 @@ export default function App() {
                   </button>
                 </div>
               )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── PARTNER ADD PRODUCT MODAL ── */}
+      <AnimatePresence>
+        {isPartnerAddOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setIsPartnerAddOpen(false)}
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative bg-zinc-950 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-white/10"
+            >
+              <div
+                className="px-8 py-6 text-white flex items-center justify-between"
+                style={{
+                  background:
+                    "linear-gradient(135deg, rgba(251,146,60,0.2), rgba(139,92,246,0.2))",
+                }}
+              >
+                <h2 className="text-xl font-black">
+                  {language === "vi"
+                    ? "🏪 Đăng sản phẩm mới"
+                    : "🏪 List New Product"}
+                </h2>
+                <button
+                  onClick={() => setIsPartnerAddOpen(false)}
+                  className="text-zinc-400 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-8 space-y-4">
+                {[
+                  {
+                    key: "name",
+                    label: language === "vi" ? "Tên sản phẩm" : "Product name",
+                    type: "text",
+                  },
+                  {
+                    key: "price",
+                    label: language === "vi" ? "Giá (VNĐ)" : "Price (VND)",
+                    type: "number",
+                  },
+                  {
+                    key: "description",
+                    label: language === "vi" ? "Mô tả" : "Description",
+                    type: "text",
+                  },
+                  {
+                    key: "image",
+                    label: language === "vi" ? "URL ảnh" : "Image URL",
+                    type: "text",
+                  },
+                  {
+                    key: "stock",
+                    label:
+                      language === "vi" ? "Số lượng tồn kho" : "Stock quantity",
+                    type: "number",
+                  },
+                ].map((f) => (
+                  <div key={f.key}>
+                    <label className="text-sm font-bold text-zinc-400 mb-1 block">
+                      {f.label}
+                    </label>
+                    <input
+                      type={f.type}
+                      value={
+                        (partnerAddForm as Record<string, string | number>)[
+                          f.key
+                        ]
+                      }
+                      onChange={(e) =>
+                        setPartnerAddForm((prev) => ({
+                          ...prev,
+                          [f.key]:
+                            f.type === "number"
+                              ? Number(e.target.value)
+                              : e.target.value,
+                        }))
+                      }
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm font-medium outline-none focus:border-orange-400/50 transition-all"
+                    />
+                  </div>
+                ))}
+                <div>
+                  <label className="text-sm font-bold text-zinc-400 mb-1 block">
+                    {language === "vi" ? "Danh mục" : "Category"}
+                  </label>
+                  <select
+                    value={partnerAddForm.category}
+                    onChange={(e) =>
+                      setPartnerAddForm((prev) => ({
+                        ...prev,
+                        category: e.target.value,
+                      }))
+                    }
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm font-medium outline-none focus:border-orange-400/50 transition-all"
+                  >
+                    {[
+                      "Mobile",
+                      "Laptop",
+                      "Audio",
+                      "Accessories",
+                      "Wearables",
+                      "Gaming",
+                    ].map((c) => (
+                      <option key={c} value={c} className="bg-zinc-900">
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={handlePartnerAddProduct}
+                  disabled={!partnerAddForm.name || !partnerAddForm.price}
+                  className="w-full text-white py-4 rounded-xl font-black hover:opacity-90 transition-all disabled:opacity-40"
+                  style={{
+                    background: "linear-gradient(135deg, #fb923c, #a855f7)",
+                  }}
+                >
+                  {language === "vi" ? "Đăng sản phẩm" : "List Product"}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
