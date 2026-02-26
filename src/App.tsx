@@ -36,6 +36,8 @@ import {
   Sun,
   Moon,
   SlidersHorizontal,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -157,6 +159,56 @@ const PRODUCT_COLORS = [
   { labelVi: "Tím", labelEn: "Purple", value: "purple", hex: "#a855f7" },
   { labelVi: "Cam", labelEn: "Orange", value: "orange", hex: "#f97316" },
 ];
+
+function getProductImage(product: {
+  name?: string;
+  category?: string;
+  image?: string;
+}): string {
+  if (product.image && !product.image.includes("picsum.photos"))
+    return product.image;
+  const name = (product.name || "").toLowerCase();
+  const cat = (product.category || "").toLowerCase();
+  if (name.includes("iphone"))
+    return "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=400&h=400&fit=crop";
+  if (name.includes("samsung") || name.includes("galaxy"))
+    return "https://images.unsplash.com/photo-1610945415295-d9bbf067e59c?w=400&h=400&fit=crop";
+  if (cat === "mobile" || name.includes("phone") || name.includes("điện thoại"))
+    return "https://images.unsplash.com/photo-1523206489230-c012c64b2b48?w=400&h=400&fit=crop";
+  if (name.includes("macbook"))
+    return "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=400&h=400&fit=crop";
+  if (cat === "laptop" || name.includes("laptop") || name.includes("notebook"))
+    return "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?w=400&h=400&fit=crop";
+  if (name.includes("airpods"))
+    return "https://images.unsplash.com/photo-1600294037681-c80b4cb5b434?w=400&h=400&fit=crop";
+  if (
+    name.includes("headphone") ||
+    name.includes("earphone") ||
+    name.includes("earbuds") ||
+    name.includes("tai nghe")
+  )
+    return "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop";
+  if (name.includes("apple watch"))
+    return "https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=400&h=400&fit=crop";
+  if (cat === "watch" || name.includes("watch") || name.includes("đồng hồ"))
+    return "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400&h=400&fit=crop";
+  if (name.includes("ipad") || cat === "tablet" || name.includes("tablet"))
+    return "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=400&h=400&fit=crop";
+  if (cat === "camera" || name.includes("camera") || name.includes("máy ảnh"))
+    return "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=400&h=400&fit=crop";
+  if (
+    cat === "gaming" ||
+    name.includes("playstation") ||
+    name.includes("xbox") ||
+    name.includes("nintendo")
+  )
+    return "https://images.unsplash.com/photo-1612287230202-1ff1d85d1bdf?w=400&h=400&fit=crop";
+  if (name.includes("speaker") || name.includes("loa"))
+    return "https://images.unsplash.com/photo-1545454675-3531b543be5d?w=400&h=400&fit=crop";
+  if (cat === "accessories")
+    return "https://images.unsplash.com/photo-1583394838336-acd977736f90?w=400&h=400&fit=crop";
+  return "https://images.unsplash.com/photo-1468495244123-6c6c332eeece?w=400&h=400&fit=crop";
+}
 
 export default function App() {
   const { t, language } = useLanguage();
@@ -828,8 +880,30 @@ export default function App() {
                   <div className="absolute top-24 right-24 w-32 h-32 border border-cyan-500/20 rounded-2xl -rotate-6" />
                   <div className="absolute bottom-16 right-48 w-20 h-20 bg-cyan-500/5 border border-cyan-500/20 rounded-xl rotate-45" />
                   {/* Hero product carousel */}
-                  <div className="absolute right-16 top-1/2 -translate-y-1/2 w-72 h-72 hidden xl:block">
-                    <div className="relative w-full h-full">
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 hidden xl:flex items-center gap-3">
+                    {/* Arrow Left */}
+                    {products.length > 1 && (
+                      <button
+                        onClick={() =>
+                          setHeroIdx(
+                            (i) =>
+                              (i - 1 + Math.min(products.length, 6)) %
+                              Math.min(products.length, 6),
+                          )
+                        }
+                        className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200 hover:scale-110"
+                        style={{
+                          background: "rgba(6,182,212,0.15)",
+                          border: "1px solid rgba(6,182,212,0.4)",
+                          color: "#22d3ee",
+                          backdropFilter: "blur(8px)",
+                        }}
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                    )}
+                    {/* Image */}
+                    <div className="relative w-72 h-72">
                       <div
                         className="absolute inset-0 rounded-3xl"
                         style={{
@@ -841,10 +915,7 @@ export default function App() {
                       <AnimatePresence mode="wait">
                         <motion.img
                           key={heroIdx}
-                          src={
-                            products[heroIdx]?.image ||
-                            "https://picsum.photos/seed/iphone15/400/400"
-                          }
+                          src={getProductImage(products[heroIdx] || {})}
                           initial={{ opacity: 0, x: 40 }}
                           animate={{ opacity: 1, x: 0 }}
                           exit={{ opacity: 0, x: -40 }}
@@ -877,6 +948,25 @@ export default function App() {
                         </div>
                       )}
                     </div>
+                    {/* Arrow Right */}
+                    {products.length > 1 && (
+                      <button
+                        onClick={() =>
+                          setHeroIdx(
+                            (i) => (i + 1) % Math.min(products.length, 6),
+                          )
+                        }
+                        className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200 hover:scale-110"
+                        style={{
+                          background: "rgba(6,182,212,0.15)",
+                          border: "1px solid rgba(6,182,212,0.4)",
+                          color: "#22d3ee",
+                          backdropFilter: "blur(8px)",
+                        }}
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                   <div className="relative z-10 max-w-xl space-y-8">
                     <div
@@ -1035,7 +1125,7 @@ export default function App() {
                             className={`aspect-square rounded-2xl overflow-hidden mb-5 ${darkMode ? "bg-zinc-900" : "bg-zinc-100"} relative`}
                           >
                             <img
-                              src={product.image}
+                              src={getProductImage(product)}
                               alt={product.name}
                               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 opacity-90"
                             />
@@ -1430,7 +1520,7 @@ export default function App() {
                             style={{ aspectRatio: "3/4" }}
                           >
                             <img
-                              src={product.image}
+                              src={getProductImage(product)}
                               alt={product.name}
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                             />
@@ -1795,7 +1885,7 @@ export default function App() {
                           >
                             <div className="relative aspect-square overflow-hidden">
                               <img
-                                src={p.image}
+                                src={getProductImage(p)}
                                 alt={p.name}
                                 className="w-full h-full object-cover"
                               />
@@ -2104,7 +2194,7 @@ export default function App() {
                                       className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"
                                     >
                                       <img
-                                        src={item.image}
+                                        src={getProductImage(item)}
                                         className="w-8 h-8 rounded-lg object-cover"
                                         alt={item.name}
                                       />
@@ -2327,7 +2417,7 @@ export default function App() {
                           className={`rounded-3xl border overflow-hidden transition-all ${darkMode ? "bg-zinc-800/50 border-white/8 hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(139,92,246,0.12)]" : "bg-white border-zinc-200 shadow-sm hover:shadow-lg"}`}
                         >
                           <img
-                            src={p.image}
+                            src={getProductImage(p)}
                             className="w-full h-40 object-cover"
                             alt={p.name}
                           />
@@ -2724,7 +2814,7 @@ export default function App() {
                       className={`flex gap-4 items-center p-4 rounded-3xl border ${darkMode ? "bg-white/5 border-white/10" : "bg-zinc-50 border-zinc-100"}`}
                     >
                       <img
-                        src={item.image}
+                        src={getProductImage(item)}
                         className="w-16 h-16 rounded-2xl object-cover"
                         alt={item.name}
                       />

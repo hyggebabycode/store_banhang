@@ -8,8 +8,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, ".", "");
+  const isVercel = !!process.env.VERCEL;
   return {
-    base: "/store_banhang/",
+    base: isVercel ? "/" : "/store_banhang/",
     plugins: [react(), tailwindcss()],
     define: {
       "process.env.GEMINI_API_KEY": JSON.stringify(env.GEMINI_API_KEY),
