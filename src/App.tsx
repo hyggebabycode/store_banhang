@@ -7,6 +7,8 @@ import {
   RefreshCw,
   AlertCircle,
   Package,
+  PackageX,
+  Search,
   X,
   CreditCard,
   Truck,
@@ -131,10 +133,14 @@ const getEstimatedDelivery = (createdAt: string): string => {
 
 export default function App() {
   const { t, language } = useLanguage();
-  const [view, setView] = useState<"shop" | "debug" | "admin" | "profile">(
-    "shop",
-  );
+  const [view, setView] = useState<
+    "shop" | "products" | "debug" | "admin" | "profile"
+  >("shop");
   const [darkMode, setDarkMode] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [priceMin, setPriceMin] = useState("");
+  const [priceMax, setPriceMax] = useState("");
+  const [productsCatFilter, setProductsCatFilter] = useState("All");
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<Product[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -474,6 +480,15 @@ export default function App() {
     categoryFilter === "All"
       ? products
       : products.filter((p) => p.category === categoryFilter);
+  const productsPageFiltered = products.filter((p) => {
+    const matchName = p.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchCat =
+      productsCatFilter === "All" || p.category === productsCatFilter;
+    const min = priceMin !== "" ? Number(priceMin) : 0;
+    const max = priceMax !== "" ? Number(priceMax) : Infinity;
+    const matchPrice = p.price >= min && p.price <= max;
+    return matchName && matchCat && matchPrice;
+  });
   const userOrders = currentUser
     ? orders.filter((o) => o.customer_email === currentUser.email)
     : [];
@@ -529,6 +544,10 @@ export default function App() {
           >
             {[
               { id: "shop" as const, label: t("nav.store") },
+              {
+                id: "products" as const,
+                label: language === "vi" ? "Sản phẩm" : "Products",
+              },
               ...(currentUser?.role === "admin"
                 ? [{ id: "admin" as const, label: t("nav.admin") }]
                 : []),
@@ -771,7 +790,10 @@ export default function App() {
                   >
                     {t("store.hero.cta")}
                   </button>
-                  <button className="px-8 py-4 font-black text-lg text-white rounded-2xl border border-white/10 hover:border-white/30 hover:bg-white/5 transition-all">
+                  <button
+                    onClick={() => setView("products")}
+                    className="px-8 py-4 font-black text-lg text-white rounded-2xl border border-white/10 hover:border-white/30 hover:bg-white/5 transition-all"
+                  >
                     {language === "vi" ? "Khám phá →" : "Explore →"}
                   </button>
                 </div>
@@ -930,6 +952,307 @@ export default function App() {
                 </div>
               )}
             </section>
+          </div>
+        )}
+
+        {/* ════ PRODUCTS PAGE ════ */}
+        {view === "products" && (
+          <div className="space-y-10">
+            {/* Breadcrumb */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setView("shop")}
+                className={`text-sm font-bold transition-colors ${
+                  darkMode
+                    ? "text-zinc-400 hover:text-white"
+                    : "text-zinc-500 hover:text-zinc-900"
+                }`}
+              >
+                ← {language === "vi" ? "Trang chủ" : "Home"}
+              </button>
+              <span className={darkMode ? "text-zinc-600" : "text-zinc-300"}>
+                /
+              </span>
+              <span className="text-sm font-bold" style={{ color: "#22d3ee" }}>
+                {language === "vi" ? "Sản phẩm" : "Products"}
+              </span>
+            </div>
+
+            {/* Page title */}
+            <div>
+              <h2 className="text-5xl font-black tracking-tighter mb-2">
+                <span
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(135deg, #22d3ee, #a855f7)",
+                    WebkitBackgroundClip: "text",
+                    WebkitTextFillColor: "transparent",
+                  }}
+                >
+                  {language === "vi" ? "Tất cả sản phẩm" : "All Products"}
+                </span>
+              </h2>
+              <p
+                className={`font-medium ${
+                  darkMode ? "text-zinc-500" : "text-zinc-500"
+                }`}
+              >
+                {productsPageFiltered.length}{" "}
+                {language === "vi" ? "sản phẩm" : "products"}
+              </p>
+            </div>
+
+            {/* ── Filter bar ── */}
+            <div
+              className={`rounded-[28px] p-6 flex flex-col md:flex-row flex-wrap gap-4 ${
+                darkMode
+                  ? "bg-zinc-800/50 border border-white/8"
+                  : "bg-white border border-zinc-200 shadow-sm"
+              }`}
+            >
+              {/* Search by name */}
+              <div className="flex-1 min-w-[200px] relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                <input
+                  type="text"
+                  placeholder={
+                    language === "vi"
+                      ? "Tìm kiếm sản phẩm..."
+                      : "Search products..."
+                  }
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className={`w-full pl-11 pr-4 py-3 rounded-xl font-medium text-sm outline-none transition-colors ${
+                    darkMode
+                      ? "bg-white/5 border border-white/10 text-white placeholder-zinc-500 focus:border-cyan-500/50"
+                      : "bg-zinc-100 border border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-cyan-400"
+                  }`}
+                />
+              </div>
+
+              {/* Price range */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span
+                  className={`text-sm font-bold whitespace-nowrap ${
+                    darkMode ? "text-zinc-400" : "text-zinc-500"
+                  }`}
+                >
+                  {language === "vi" ? "Giá từ" : "Price"}
+                </span>
+                <input
+                  type="number"
+                  placeholder="0"
+                  value={priceMin}
+                  onChange={(e) => setPriceMin(e.target.value)}
+                  className={`w-28 px-3 py-3 rounded-xl font-medium text-sm outline-none transition-colors ${
+                    darkMode
+                      ? "bg-white/5 border border-white/10 text-white placeholder-zinc-500 focus:border-cyan-500/50"
+                      : "bg-zinc-100 border border-zinc-200 text-zinc-900 focus:border-cyan-400"
+                  }`}
+                />
+                <span
+                  className={`text-sm font-bold ${
+                    darkMode ? "text-zinc-400" : "text-zinc-500"
+                  }`}
+                >
+                  —
+                </span>
+                <input
+                  type="number"
+                  placeholder="∞"
+                  value={priceMax}
+                  onChange={(e) => setPriceMax(e.target.value)}
+                  className={`w-28 px-3 py-3 rounded-xl font-medium text-sm outline-none transition-colors ${
+                    darkMode
+                      ? "bg-white/5 border border-white/10 text-white placeholder-zinc-500 focus:border-cyan-500/50"
+                      : "bg-zinc-100 border border-zinc-200 text-zinc-900 focus:border-cyan-400"
+                  }`}
+                />
+                <span
+                  className={`text-xs font-bold ${
+                    darkMode ? "text-zinc-500" : "text-zinc-400"
+                  }`}
+                >
+                  đ
+                </span>
+              </div>
+
+              {/* Reset button */}
+              {(searchQuery ||
+                priceMin ||
+                priceMax ||
+                productsCatFilter !== "All") && (
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    setPriceMin("");
+                    setPriceMax("");
+                    setProductsCatFilter("All");
+                  }}
+                  className={`px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+                    darkMode
+                      ? "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white"
+                      : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900"
+                  }`}
+                >
+                  {language === "vi" ? "Xoá bộ lọc" : "Reset"}
+                </button>
+              )}
+            </div>
+
+            {/* Category pills */}
+            <div className="flex flex-wrap gap-2">
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setProductsCatFilter(cat)}
+                  className={`px-5 py-2.5 rounded-full text-sm font-bold transition-all border ${
+                    productsCatFilter === cat
+                      ? "text-black border-transparent"
+                      : darkMode
+                        ? "border-white/10 text-zinc-400 hover:text-white hover:border-white/20 bg-white/5"
+                        : "border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-300 bg-white"
+                  }`}
+                  style={
+                    productsCatFilter === cat
+                      ? {
+                          background:
+                            "linear-gradient(135deg, #22d3ee, #a855f7)",
+                        }
+                      : {}
+                  }
+                >
+                  {cat === "All" ? (language === "vi" ? "Tất cả" : "All") : cat}
+                </button>
+              ))}
+            </div>
+
+            {/* Product grid */}
+            {loading ? (
+              <div className="flex items-center justify-center h-48">
+                <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : productsPageFiltered.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-24 gap-4">
+                <PackageX className="w-16 h-16 text-zinc-600" />
+                <p
+                  className={`font-black text-xl ${
+                    darkMode ? "text-zinc-600" : "text-zinc-400"
+                  }`}
+                >
+                  {language === "vi"
+                    ? "Không tìm thấy sản phẩm nào"
+                    : "No products found"}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+                {productsPageFiltered.map((product) => (
+                  <motion.div
+                    key={product.id}
+                    whileHover={{ y: -10, scale: 1.02 }}
+                    className="group relative rounded-[28px] p-5 transition-all cursor-pointer overflow-hidden"
+                    style={
+                      darkMode
+                        ? {
+                            background:
+                              "linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.06))",
+                            border: "1px solid rgba(255,255,255,0.08)",
+                            backdropFilter: "blur(10px)",
+                          }
+                        : {
+                            background: "white",
+                            border: "1px solid rgba(0,0,0,0.08)",
+                            boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
+                          }
+                    }
+                    onMouseEnter={(e) => (
+                      (e.currentTarget.style.border =
+                        "1px solid rgba(139,92,246,0.4)"),
+                      (e.currentTarget.style.boxShadow =
+                        "0 0 30px rgba(139,92,246,0.15)")
+                    )}
+                    onMouseLeave={(e) => (
+                      (e.currentTarget.style.border = darkMode
+                        ? "1px solid rgba(255,255,255,0.08)"
+                        : "1px solid rgba(0,0,0,0.08)"),
+                      (e.currentTarget.style.boxShadow = darkMode
+                        ? "none"
+                        : "0 2px 12px rgba(0,0,0,0.06)")
+                    )}
+                  >
+                    <div
+                      className={`aspect-square rounded-2xl overflow-hidden mb-5 ${
+                        darkMode ? "bg-zinc-900" : "bg-zinc-100"
+                      } relative`}
+                    >
+                      <img
+                        src={product.image}
+                        alt={product.name}
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 opacity-90"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                      {product.stock < 1 && (
+                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                          <span className="text-red-400 font-black text-sm uppercase tracking-widest">
+                            OUT
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-3">
+                      <span
+                        className="text-[10px] font-black uppercase tracking-widest"
+                        style={{ color: "#22d3ee" }}
+                      >
+                        {product.category}
+                      </span>
+                      <div className="flex justify-between items-start gap-2">
+                        <h4
+                          className={`font-black text-base ${
+                            darkMode ? "text-white" : "text-zinc-900"
+                          } leading-snug`}
+                        >
+                          {product.name}
+                        </h4>
+                        <p
+                          className="text-base font-black whitespace-nowrap"
+                          style={{
+                            backgroundImage:
+                              "linear-gradient(135deg, #22d3ee, #a855f7)",
+                            WebkitBackgroundClip: "text",
+                            WebkitTextFillColor: "transparent",
+                          }}
+                        >
+                          {fmtVND(product.price)}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => addToCart(product)}
+                        disabled={product.stock < 1}
+                        className="w-full py-3.5 rounded-xl font-black flex items-center justify-center gap-2 text-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed text-black"
+                        style={
+                          product.stock >= 1
+                            ? {
+                                background:
+                                  "linear-gradient(135deg, #22d3ee, #a855f7)",
+                              }
+                            : {
+                                background: "rgba(255,255,255,0.05)",
+                                color: "#71717a",
+                              }
+                        }
+                      >
+                        <ShoppingCart className="w-4 h-4" />
+                        {product.stock < 1
+                          ? t("store.outOfStock")
+                          : t("store.addToCart")}
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
